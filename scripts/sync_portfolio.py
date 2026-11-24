@@ -54,34 +54,68 @@ def parse_float(val):
 def fetch_ibkr_flex_positions():
     """從 IBKR Flex Web Service 抓取最新持倉股數、成本及 Cash Report (Base Currency Summary)"""
     if not IBKR_TOKEN or not IBKR_QUERY_ID:
-        print("⚠️ 未偵測到 IBKR_TOKEN 或 IBKR_QUERY_ID，跳過 IBKR 持倉同步。")
-        return {}, None
+        msg = "未偵測到 IBKR_TOKEN 或 IBKR_QUERY_ID，跳過 IBKR 持倉同步。"
+        print(f"⚠️ {msg}")
+        return {}, None, msg
 
-    send_url = (
-        f"https://gdcdyn.interactivebrokers.com/Universal/servlet/"
-        f"FlexStatementService.SendRequest?t={urllib.parse.quote(IBKR_TOKEN)}"
-        f"&q={urllib.parse.quote(IBKR_QUERY_ID)}&v=3"
-    )
+    # 自動偵測是否不小心將較短的 Query ID 與較長的 Token 調轉填入 GitHub Secrets
+    token_val, query_val = IBKR_TOKEN, IBKR_QUERY_ID
+    if len(token_val) <= 10 and len(query_val) >= 15:
+        print("🔄 偵測到 IBKR_TOKEN 與 IBKR_QUERY_ID 長度可能調轉，自動互換重試...")
+        token_val, query_val = query_val, token_val
+
+    endpoints = [
+        "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService",
+        "https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService",
+    ]
 
     ref_code = None
-    for _ in range(6):
-        xml_txt = http_get_text(send_url, retries=4, delay=4)
-        root = ET.fromstring(xml_txt)
-        ref_elem = root.find(".//ReferenceCode")
-        if ref_elem is not None and ref_elem.text:
-            ref_code = ref_elem.text.strip()
+    active_base = endpoints[0]
+    last_ibkr_err = "未能取得 ReferenceCode"
+
+    for base_url in endpoints:
+        send_url = (
+            f"{base_url}/SendRequest?t={urllib.parse.quote(token_val)}"
+            f"&q={urllib.parse.quote(query_val)}&v=3"
+        )
+        for attempt in range(4):
+            try:
+                xml_txt = http_get_text(send_url, retries=3, delay=3)
+                root = ET.fromstring(xml_txt)
+                ref_elem = root.find(".//ReferenceCode")
+                if ref_elem is not None and ref_elem.text:
+                    ref_code = ref_elem.text.strip()
+                    active_base = base_url
+                    break
+
+                err_code = (root.findtext(".//ErrorCode") or "").strip()
+                err_msg = (root.findtext(".//ErrorMessage") or "").strip()
+                if err_code or err_msg:
+                    last_ibkr_err = f"IBKR Error {err_code}: {err_msg}"
+                    print(f"⚠️ {last_ibkr_err}")
+                    # 若為暫時性報表生成中 (1019)，等待重試；若為設定/權限/Token錯誤則直接跳出
+                    if err_code not in ("1019", "1003"):
+                        break
+                else:
+                    snippet = xml_txt.strip().replace("\n", " ")[:180]
+                    last_ibkr_err = f"未知 XML 回應: {snippet}"
+                    print(f"⚠️ {last_ibkr_err}")
+            except Exception as e:
+                last_ibkr_err = f"連線異常: {e}"
+                print(f"⚠️ SendRequest 嘗試 {attempt + 1} 失敗: {e}")
+            time.sleep(3)
+        if ref_code:
             break
-        time.sleep(4)
 
     if not ref_code:
-        print("❌ IBKR Flex SendRequest 未能取得 ReferenceCode")
-        return {}, None
+        print(f"❌ IBKR Flex SendRequest 失敗 -> {last_ibkr_err}")
+        print(f"ℹ️ Secret 檢查：Token 長度={len(token_val)} 位，Query ID 長度={len(query_val)} 位")
+        return {}, None, last_ibkr_err
 
     time.sleep(4)
     get_url = (
-        f"https://gdcdyn.interactivebrokers.com/Universal/servlet/"
-        f"FlexStatementService.GetStatement?q={urllib.parse.quote(ref_code)}"
-        f"&t={urllib.parse.quote(IBKR_TOKEN)}&v=3"
+        f"{active_base}/GetStatement?q={urllib.parse.quote(ref_code)}"
+        f"&t={urllib.parse.quote(token_val)}&v=3"
     )
 
     csv_txt = ""
@@ -93,8 +127,9 @@ def fetch_ibkr_flex_positions():
         time.sleep(4)
 
     if not csv_txt:
-        print("❌ IBKR Flex GetStatement 逾時或無效回應")
-        return {}, None
+        err_timeout = "IBKR Flex GetStatement 逾時或報表格式未含持倉欄位"
+        print(f"❌ {err_timeout}")
+        return {}, None, err_timeout
 
     positions = {}
     free_cash = None
@@ -131,7 +166,6 @@ def fetch_ibkr_flex_positions():
             sec_code = row[1].upper()
             vals = row[2:]
             if pos_headers and len(vals) >= 2 and ("Symbol" in pos_headers):
-                # 判斷是否屬於持倉資料列
                 row_dict = dict(zip(pos_headers, vals))
                 if row_dict.get("Symbol") and parse_float(row_dict.get("Quantity")) is not None:
                     _extract_position(row_dict, positions)
@@ -170,7 +204,7 @@ def fetch_ibkr_flex_positions():
                     found_base_summary = True
 
     print(f"✅ 成功解析 IBKR 持倉：{len(positions)} 隻標的 | 自由現金 (freeCash): {free_cash}")
-    return positions, free_cash
+    return positions, free_cash, None
 
 def _extract_position(row_dict, positions):
     sym = row_dict.get("Symbol", "").strip().upper()
@@ -276,9 +310,9 @@ def main():
         except Exception as e:
             print(f"⚠️ 讀取舊 data.json 失敗: {e}")
 
-    ibkr_pos, ibkr_cash = fetch_ibkr_flex_positions()
+    ibkr_pos, ibkr_cash, ibkr_err = fetch_ibkr_flex_positions()
 
-    ibkr_sync_status = "LIVE"
+    ibkr_sync_status = "LIVE" if not ibkr_err else "CACHED_FALLBACK"
     if not ibkr_pos and prev_data.get("ibkrPositions"):
         ibkr_pos = prev_data["ibkrPositions"]
         ibkr_sync_status = "CACHED_FALLBACK"
@@ -329,6 +363,7 @@ def main():
     output = {
         "updatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "ibkrSyncStatus": ibkr_sync_status,
+        "ibkrError": ibkr_err,
         "gbpUsdRate": gbp_usd,
         "freeCash": ibkr_cash,
         "ibkrPositions": ibkr_pos,
