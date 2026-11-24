@@ -460,9 +460,12 @@
             if (cloud.updatedAt) {
               setLastUpdated(cloud.updatedAt);
             }
+            const ibkrNote = cloud.ibkrError
+              ? `LSE 股價與 RSI/MA 已更新 (${cloud.updatedAt})，但 IBKR 持倉暫用舊快照（${cloud.ibkrError}）`
+              : `已自動載入雲端最新快照 (${cloud.updatedAt}) • 含 IBUK 持倉與倫敦交易所真實 LSE 股價及 RSI/MA！`;
             setApiStatus({
               type: 'success',
-              message: `已自動載入雲端最新快照 (${cloud.updatedAt}) • 含 IBUK 持倉與倫敦交易所真實 LSE 股價及 RSI/MA！`,
+              message: ibkrNote,
               gbpUsdRate: cloud.gbpUsdRate || 1.318
             });
           })
