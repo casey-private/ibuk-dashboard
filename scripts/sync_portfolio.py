@@ -1,4 +1,5 @@
 import os
+import csv
 import json
 import time
 import urllib.request
@@ -11,6 +12,7 @@ IBKR_TOKEN = os.environ.get("IBKR_TOKEN", "").strip()
 IBKR_QUERY_ID = os.environ.get("IBKR_QUERY_ID", "").strip()
 
 # 2. 倫敦交易所 (LSE) ETF 元數據與單位設定
+# 注意：IGLN.L 與 CRUD.L 在倫敦交易所報價本身已為英鎊 (GBP)，無需再除以 GBP/USD 匯率
 LSE_ASSETS = [
     {"ticker": "CSH2", "yahoo": "CSH2.L", "is_pence": True, "is_usd": False},
     {"ticker": "VNRT", "yahoo": "VNRT.L", "is_pence": False, "is_usd": False},
@@ -19,9 +21,9 @@ LSE_ASSETS = [
     {"ticker": "SJPA", "yahoo": "SJPA.L", "is_pence": True, "is_usd": False},
     {"ticker": "SAUS", "yahoo": "SAUS.L", "is_pence": True, "is_usd": False},
     {"ticker": "EXCS", "yahoo": "EXCS.L", "is_pence": False, "is_usd": False},
-    {"ticker": "IGLN", "yahoo": "IGLN.L", "is_pence": False, "is_usd": True},
+    {"ticker": "IGLN", "yahoo": "IGLN.L", "is_pence": False, "is_usd": False},
     {"ticker": "LQQ3", "yahoo": "LQQ3.L", "is_pence": True, "is_usd": False},
-    {"ticker": "CRUD", "yahoo": "CRUD.L", "is_pence": False, "is_usd": True},
+    {"ticker": "CRUD", "yahoo": "CRUD.L", "is_pence": False, "is_usd": False},
 ]
 
 def http_get_text(url, retries=4, delay=3):
@@ -38,8 +40,19 @@ def http_get_text(url, retries=4, delay=3):
             else:
                 raise e
 
+def parse_float(val):
+    if val is None:
+        return None
+    s = str(val).strip().replace(",", "")
+    if not s or s == "-" or s.upper() == "N/A":
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
 def fetch_ibkr_flex_positions():
-    """從 IBKR Flex Web Service 抓取最新持倉股數與成本/現金"""
+    """從 IBKR Flex Web Service 抓取最新持倉股數、成本及 Cash Report (Base Currency Summary)"""
     if not IBKR_TOKEN or not IBKR_QUERY_ID:
         print("⚠️ 未偵測到 IBKR_TOKEN 或 IBKR_QUERY_ID，跳過 IBKR 持倉同步。")
         return {}, None
@@ -64,7 +77,6 @@ def fetch_ibkr_flex_positions():
         print("❌ IBKR Flex SendRequest 未能取得 ReferenceCode")
         return {}, None
 
-    # 等待 3 秒讓 IBKR 伺服器生成報表
     time.sleep(3)
     get_url = (
         f"https://gdcdyn.interactivebrokers.com/Universal/servlet/"
@@ -75,7 +87,7 @@ def fetch_ibkr_flex_positions():
     csv_txt = ""
     for _ in range(4):
         txt = http_get_text(get_url)
-        if "Symbol" in txt or "Quantity" in txt:
+        if "Symbol" in txt or "Quantity" in txt or "EndingCash" in txt:
             csv_txt = txt
             break
         time.sleep(3)
@@ -86,51 +98,121 @@ def fetch_ibkr_flex_positions():
 
     positions = {}
     free_cash = None
+    found_base_summary = False
 
-    for raw_line in csv_txt.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith('"MSG"') or line.startswith("MSG"):
+    pos_headers = None
+    cash_headers = None
+    active_section = None  # 'POS' or 'CASH'
+
+    reader = csv.reader(csv_txt.splitlines())
+    for raw_row in reader:
+        row = [c.strip() for c in raw_row]
+        if not row or not any(row):
             continue
-        cols = [c.strip().strip('"') for c in line.split(",")]
-        if len(cols) < 2 or cols[0] == "Symbol":
+
+        first = row[0].upper()
+        # 跳過 IBKR 報表封裝標記與警告列
+        if first in ("BOF", "EOF", "BOA", "EOA", "BOS", "EOS", "MSG"):
             continue
 
-        sym = cols[0].upper()
-        clean_sym = sym[:-1] if sym.endswith("L") and len(sym) >= 4 else sym
+        # 情況 A：IBKR 多區塊標準格式 ("HEADER","POST",... / "DATA","POST",...)
+        if first == "HEADER" and len(row) >= 3:
+            sec_code = row[1].upper()
+            cols = row[2:]
+            if "Symbol" in cols and "Quantity" in cols:
+                pos_headers = cols
+                print(f"📋 偵測到持倉區塊 ({sec_code}): {cols}")
+            elif "EndingCash" in cols or "EndingSettledCash" in cols:
+                cash_headers = cols
+                print(f"💰 偵測到現金區塊 ({sec_code}): {cols}")
+            continue
 
-        # 偵測現金列
-        if clean_sym in ("GBP", "CASH", "BASE_SUMMARY"):
-            for val_str in reversed(cols[1:]):
-                try:
-                    free_cash = float(val_str)
-                    break
-                except ValueError:
+        if first == "DATA" and len(row) >= 3:
+            sec_code = row[1].upper()
+            vals = row[2:]
+            if pos_headers and len(vals) >= 2 and ("Symbol" in pos_headers):
+                # 判斷是否屬於持倉資料列
+                row_dict = dict(zip(pos_headers, vals))
+                if row_dict.get("Symbol") and parse_float(row_dict.get("Quantity")) is not None:
+                    _extract_position(row_dict, positions)
                     continue
+            if cash_headers and ("EndingCash" in cash_headers or "EndingSettledCash" in cash_headers):
+                row_dict = dict(zip(cash_headers, vals))
+                cash_val, is_base = _extract_cash(row_dict)
+                if cash_val is not None and (is_base or not found_base_summary):
+                    free_cash = cash_val
+                    if is_base:
+                        found_base_summary = True
             continue
 
-        # 解析持倉股數與均價/成本
-        try:
-            qty = float(cols[1])
-            avg_price = None
-            cost_basis = None
-            if len(cols) >= 3 and cols[2]:
-                val2 = float(cols[2])
-                if qty > 0 and val2 > qty * 2:
-                    cost_basis = val2
-                    avg_price = val2 / qty
-                else:
-                    avg_price = val2
-                    cost_basis = qty * val2
-            positions[clean_sym] = {
-                "position": qty,
-                "avgPrice": round(avg_price, 4) if avg_price is not None else None,
-                "costBasis": round(cost_basis, 2) if cost_basis is not None else None,
-            }
-        except ValueError:
+        # 情況 B：無 HEADER/DATA 前綴的連續表格格式
+        if "Symbol" in row and "Quantity" in row:
+            pos_headers = row
+            active_section = "POS"
+            print(f"📋 偵測到持倉標題列: {row}")
             continue
 
-    print(f"✅ 成功解析 IBKR 持倉：{len(positions)} 隻標的")
+        if "EndingCash" in row or "EndingSettledCash" in row:
+            cash_headers = row
+            active_section = "CASH"
+            print(f"💰 偵測到現金標題列: {row}")
+            continue
+
+        if active_section == "POS" and pos_headers:
+            row_dict = dict(zip(pos_headers, row))
+            _extract_position(row_dict, positions)
+        elif active_section == "CASH" and cash_headers:
+            row_dict = dict(zip(cash_headers, row))
+            cash_val, is_base = _extract_cash(row_dict)
+            if cash_val is not None and (is_base or not found_base_summary):
+                free_cash = cash_val
+                if is_base:
+                    found_base_summary = True
+
+    print(f"✅ 成功解析 IBKR 持倉：{len(positions)} 隻標的 | 自由現金 (freeCash): {free_cash}")
     return positions, free_cash
+
+def _extract_position(row_dict, positions):
+    sym = row_dict.get("Symbol", "").strip().upper()
+    if not sym:
+        return
+    clean_sym = sym[:-1] if sym.endswith("L") and len(sym) >= 4 else sym
+    qty = parse_float(row_dict.get("Quantity"))
+    if qty is None:
+        return
+
+    avg_price = parse_float(row_dict.get("CostBasisPrice"))
+    cost_basis = parse_float(row_dict.get("CostBasisMoney"))
+
+    if cost_basis is None and avg_price is not None:
+        cost_basis = qty * avg_price
+    elif avg_price is None and cost_basis is not None and qty > 0:
+        avg_price = cost_basis / qty
+
+    positions[clean_sym] = {
+        "position": qty,
+        "avgPrice": round(avg_price, 4) if avg_price is not None else None,
+        "costBasis": round(cost_basis, 2) if cost_basis is not None else None,
+    }
+
+def _extract_cash(row_dict):
+    curr = (
+        row_dict.get("CurrencyPrimary")
+        or row_dict.get("Currency")
+        or ""
+    ).strip().upper()
+
+    is_base = curr in ("BASE_SUMMARY", "BASE", "TOTAL")
+    if curr and not is_base and curr != "GBP":
+        return None, False
+
+    val = parse_float(row_dict.get("EndingCash"))
+    if val is None:
+        val = parse_float(row_dict.get("EndingSettledCash"))
+
+    if val is not None:
+        return round(val, 2), is_base
+    return None, False
 
 def compute_wilder_indicators(closes):
     """100% 還原 Excel Data_XXX 的 Wilder 平滑 RSI(2), RSI(14) 與 MA4, MA30"""
@@ -187,7 +269,6 @@ def fetch_yahoo_lse_series(symbol):
 def main():
     ibkr_pos, ibkr_cash = fetch_ibkr_flex_positions()
 
-    # 抓取 GBP/USD 匯率供 IGLN / CRUD 換算英鎊
     gbp_usd = 1.318
     try:
         fx_closes = fetch_yahoo_lse_series("GBPUSD=X")
