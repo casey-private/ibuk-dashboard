@@ -1,9 +1,56 @@
 {
-  "updatedAt": "2026-11-24 22:21 UTC",
+  "updatedAt": "2026-11-24 22:27 UTC",
   "ibkrSyncStatus": "LIVE",
+  "ibkrError": null,
   "gbpUsdRate": 1.311,
   "freeCash": null,
-  "ibkrPositions": {},
+  "ibkrPositions": {
+    "CSH2": {
+      "position": 4717.0,
+      "avgPrice": 4.95,
+      "costBasis": 23349.13
+    },
+    "EXCS": {
+      "position": 1780.0,
+      "avgPrice": 4.9565,
+      "costBasis": 8822.5
+    },
+    "LQQ3": {
+      "position": 12.0,
+      "avgPrice": 213.1767,
+      "costBasis": 2558.12
+    },
+    "MIDD": {
+      "position": 525.0,
+      "avgPrice": 20.3736,
+      "costBasis": 10696.14
+    },
+    "SAUS": {
+      "position": 239.0,
+      "avgPrice": 43.898,
+      "costBasis": 10491.63
+    },
+    "SJPA": {
+      "position": 191.0,
+      "avgPrice": 53.0813,
+      "costBasis": 10138.54
+    },
+    "VERX": {
+      "position": 266.0,
+      "avgPrice": 40.4067,
+      "costBasis": 10748.17
+    },
+    "VNRT": {
+      "position": 225.0,
+      "avgPrice": 126.6201,
+      "costBasis": 28489.52
+    },
+    "IGLN": {
+      "position": 110.0,
+      "avgPrice": 66.1214,
+      "costBasis": 7273.35
+    }
+  },
   "marketData": {
     "CSH2": {
       "priceGbp": 5.047,
