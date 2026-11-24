@@ -1,0 +1,124 @@
+{
+  "updatedAt": "2026-11-24 20:59 UTC",
+  "gbpUsdRate": 1.3116,
+  "freeCash": null,
+  "ibkrPositions": {
+    "CSH2": {
+      "position": 4717.0,
+      "avgPrice": 4.95,
+      "costBasis": 23349.13
+    },
+    "EXCS": {
+      "position": 1780.0,
+      "avgPrice": 4.9565,
+      "costBasis": 8822.5
+    },
+    "LQQ3": {
+      "position": 12.0,
+      "avgPrice": 17.7647,
+      "costBasis": 213.18
+    },
+    "MIDD": {
+      "position": 525.0,
+      "avgPrice": 20.3736,
+      "costBasis": 10696.13
+    },
+    "SAUS": {
+      "position": 239.0,
+      "avgPrice": 43.898,
+      "costBasis": 10491.63
+    },
+    "SJPA": {
+      "position": 191.0,
+      "avgPrice": 53.0813,
+      "costBasis": 10138.54
+    },
+    "VERX": {
+      "position": 266.0,
+      "avgPrice": 40.4067,
+      "costBasis": 10748.17
+    },
+    "VNRT": {
+      "position": 225.0,
+      "avgPrice": 126.6201,
+      "costBasis": 28489.52
+    },
+    "IGLN": {
+      "position": 110.0,
+      "avgPrice": 66.1214,
+      "costBasis": 7273.35
+    }
+  },
+  "marketData": {
+    "CSH2": {
+      "priceGbp": 5.047,
+      "rsi2": 99.98,
+      "rsi14": 93.2,
+      "ma4": 504.65,
+      "ma30": 503.579
+    },
+    "VNRT": {
+      "priceGbp": 133.16,
+      "rsi2": 37.08,
+      "rsi14": 39.37,
+      "ma4": 134.024,
+      "ma30": 138.619
+    },
+    "MIDD": {
+      "priceGbp": 22.085,
+      "rsi2": 36.2,
+      "rsi14": 39.7,
+      "ma4": 2215.625,
+      "ma30": 2261.033
+    },
+    "VERX": {
+      "priceGbp": 40.895,
+      "rsi2": 37.84,
+      "rsi14": 41.27,
+      "ma4": 40.99,
+      "ma30": 41.698
+    },
+    "SJPA": {
+      "priceGbp": 57.1,
+      "rsi2": 39.4,
+      "rsi14": 37.9,
+      "ma4": 5734.25,
+      "ma30": 5984.467
+    },
+    "SAUS": {
+      "priceGbp": 45.135,
+      "rsi2": 35.04,
+      "rsi14": 32.84,
+      "ma4": 4517.375,
+      "ma30": 4719.517
+    },
+    "EXCS": {
+      "priceGbp": 5.993,
+      "rsi2": 38.75,
+      "rsi14": 40.69,
+      "ma4": 6.059,
+      "ma30": 6.427
+    },
+    "IGLN": {
+      "priceGbp": 52.7428,
+      "rsi2": 29.2,
+      "rsi14": 30.68,
+      "ma4": 70.159,
+      "ma30": 76.838
+    },
+    "LQQ3": {
+      "priceGbp": 199.29,
+      "rsi2": 29.61,
+      "rsi14": 33.46,
+      "ma4": 21264.75,
+      "ma30": 26904.0
+    },
+    "CRUD": {
+      "priceGbp": 12.0654,
+      "rsi2": 23.04,
+      "rsi14": 33.76,
+      "ma4": 16.008,
+      "ma30": 17.752
+    }
+  }
+}
