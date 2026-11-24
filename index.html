@@ -1,0 +1,1638 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IBUK 量化投資組合儀表板 | Quant Portfolio Tracker</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+              800: '#166534',
+              900: '#14532d',
+            },
+            darkbg: '#0f172a',
+            darkcard: '#1e293b',
+            darkborder: '#334155'
+          }
+        }
+      }
+    }
+  </script>
+  <!-- React 18, ReactDOM 18, Babel Standalone CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- FontAwesome / Inter Font -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #475569;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #64748b;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen selection:bg-emerald-500 selection:text-slate-950">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    // --- 預設初始數據（11月23日最新校正快照） ---
+    const INITIAL_HOLDINGS = [
+      {
+        ticker: "CSH2",
+        name: "英鎊貨幣市場基金 (Lyxor Overnight)",
+        targetPct: 20.0,
+        position: 4800,
+        avgPrice: 4.95,
+        price: 5.047,
+        costBasis: 23758.81,
+        rsi2: 99.99,
+        rsi14: 90.73,
+        ma4: 504.60,
+        ma30: 503.40,
+        category: "defensive",
+        note: "核心英鎊現金替代品 / 20% 置業防線"
+      },
+      {
+        ticker: "VNRT",
+        name: "北美核心引擎 (Vanguard FTSE NA)",
+        targetPct: 25.0,
+        position: 225,
+        avgPrice: 126.62,
+        price: 136.09,
+        costBasis: 28489.52,
+        rsi2: 4.49,
+        rsi14: 37.85,
+        ma4: 137.50,
+        ma30: 139.80,
+        category: "core",
+        note: "美股核心配置 (RSI(2) < 15 買入觸發源)"
+      },
+      {
+        ticker: "MIDD",
+        name: "英國中型股 (iShares FTSE 250)",
+        targetPct: 9.0,
+        position: 525,
+        avgPrice: 20.37,
+        price: 22.27,
+        costBasis: 10696.14,
+        rsi2: 0.36,
+        rsi14: 45.85,
+        ma4: 2255.00,
+        ma30: 2260.00,
+        category: "core",
+        note: "英國中型股指數"
+      },
+      {
+        ticker: "VERX",
+        name: "歐洲除英國 (Vanguard Dev Europe)",
+        targetPct: 9.0,
+        position: 266,
+        avgPrice: 40.41,
+        price: 41.25,
+        costBasis: 10748.17,
+        rsi2: 0.51,
+        rsi14: 47.38,
+        ma4: 42.10,
+        ma30: 41.68,
+        category: "core",
+        note: "歐洲發達市場"
+      },
+      {
+        ticker: "SJPA",
+        name: "日本全市場 (iShares MSCI Japan)",
+        targetPct: 9.0,
+        position: 191,
+        avgPrice: 53.08,
+        price: 58.35,
+        costBasis: 10138.54,
+        rsi2: 4.12,
+        rsi14: 35.79,
+        ma4: 5890.00,
+        ma30: 6070.00,
+        category: "core",
+        note: "日本全股票市場"
+      },
+      {
+        ticker: "SAUS",
+        name: "澳洲戰區 (iShares MSCI Australia)",
+        targetPct: 9.0,
+        position: 231,
+        avgPrice: 43.84,
+        price: 45.52,
+        costBasis: 10126.48,
+        rsi2: 0.59,
+        rsi14: 36.15,
+        ma4: 4680.00,
+        ma30: 4735.00,
+        category: "core",
+        note: "澳洲資源與金融"
+      },
+      {
+        ticker: "EXCS",
+        name: "新興市場除中國 (iShares EM ex-China)",
+        targetPct: 9.0,
+        position: 1780,
+        avgPrice: 4.96,
+        price: 6.32,
+        costBasis: 8822.50,
+        rsi2: 4.46,
+        rsi14: 36.90,
+        ma4: 6.30,
+        ma30: 6.58,
+        category: "core",
+        note: "新興市場 (扣除中國風險)"
+      },
+      {
+        ticker: "IGLN",
+        name: "實物黃金避險 (iShares Physical Gold)",
+        targetPct: 5.0,
+        position: 105,
+        avgPrice: 67.38,
+        price: 54.62,
+        costBasis: 7074.54,
+        rsi2: 1.12,
+        rsi14: 37.61,
+        ma4: 74.20,
+        ma30: 78.10,
+        category: "hedge",
+        note: "實物黃金保值"
+      },
+      {
+        ticker: "LQQ3",
+        name: "3倍納指衛星進攻倉 (WisdomTree 3x)",
+        targetPct: 0.0,
+        position: 12,
+        avgPrice: 213.18,
+        price: 223.38,
+        costBasis: 2558.12,
+        rsi2: 9.63,
+        rsi14: 30.99,
+        ma4: 23200.00,
+        ma30: 28900.00,
+        category: "satellite",
+        note: "獨立衛星戰術倉 (已成交第一、二注共12股)"
+      },
+      {
+        ticker: "CRUD",
+        name: "原油能源 (已退場)",
+        targetPct: 0.0,
+        position: 0,
+        avgPrice: 0.0,
+        price: 12.33,
+        costBasis: 0.0,
+        rsi2: 21.57,
+        rsi14: 38.22,
+        ma4: 16.75,
+        ma30: 18.03,
+        category: "closed",
+        note: "歷史紀錄 (持倉歸零)"
+      }
+    ];
+
+    // --- 預設 LQQ3 衛星倉戰術參數（11月23日最新狀態） ---
+    const INITIAL_LQQ3_PARAMS = {
+      buyDate: "2026-11-17",
+      targetHoldDays: 45,
+      takeProfitPct: 18.0,
+      hardStopLossPct: 24.0,
+      tranches: [
+        { id: 1, label: "第一注 (底倉)", shares: 6, buyPriceGbp: 219.00, status: "FILLED", note: "21,900p 已成交" },
+        { id: 2, label: "第二注 (加碼)", shares: 6, buyPriceGbp: 207.35, status: "FILLED", note: "20,700p 區間已成交 (均價降至 £213.18)" },
+        { id: 3, label: "第三注 (深洗)", shares: 9, buyPriceGbp: 189.00, status: "PENDING", note: "18,900p GTC 掛單待命 (預留 £1,701.00)" }
+      ]
+    };
+
+    // --- 倫敦交易所 ETF 代號與 Twelve Data 免費版美股標尺映射表 ---
+    // (Twelve Data 免費版不開放 :LSE，改用追蹤同指數之美股 ETF 計算精準 RSI/MA 趨勢，避免覆蓋英鎊現價)
+    const LSE_TICKER_META = {
+      CSH2: { yahoo: 'CSH2.L', tdProxy: null, isPence: true },
+      VNRT: { yahoo: 'VNRT.L', tdProxy: 'VOO', isPence: false },
+      MIDD: { yahoo: 'MIDD.L', tdProxy: 'EWU', isPence: true },
+      VERX: { yahoo: 'VERX.L', tdProxy: 'VGK', isPence: false },
+      SJPA: { yahoo: 'SJPA.L', tdProxy: 'EWJ', isPence: true },
+      SAUS: { yahoo: 'SAUS.L', tdProxy: 'EWA', isPence: true },
+      EXCS: { yahoo: 'EXCS.L', tdProxy: 'EMXC', isPence: false },
+      IGLN: { yahoo: 'IGLN.L', tdProxy: 'GLD', isPence: false, isUsd: true },
+      LQQ3: { yahoo: 'LQQ3.L', tdProxy: 'TQQQ', isPence: true },
+      CRUD: { yahoo: 'CRUD.L', tdProxy: null, isPence: false, isUsd: true }
+    };
+
+    // 計算兩個日期之間的交易日數 (扣除星期六、日)
+    function calcTradingDays(startDateStr, endDateStr) {
+      if (!startDateStr) return 0;
+      const start = new Date(startDateStr);
+      const end = endDateStr ? new Date(endDateStr) : new Date();
+      if (isNaN(start.getTime()) || start > end) return 0;
+
+      let count = 0;
+      let cur = new Date(start);
+      cur.setHours(0, 0, 0, 0);
+      const target = new Date(end);
+      target.setHours(0, 0, 0, 0);
+
+      while (cur < target) {
+        cur.setDate(cur.getDate() + 1);
+        const day = cur.getDay();
+        if (day !== 0 && day !== 6) {
+          count++;
+        }
+      }
+      return Math.max(0, count);
+    }
+
+    // 格式化貨幣
+    const fmtGBP = (val) => {
+      if (val === undefined || val === null || isNaN(val)) return "£0.00";
+      return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+    };
+
+    const fmtNum = (val, decimals = 2) => {
+      if (val === undefined || val === null || isNaN(val)) return "0.00";
+      return Number(val).toLocaleString('en-GB', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    };
+
+    // --- 100% 還原 Excel Data_XXX 工作表的 Wilder's 平滑 RSI 與 MA 計算引擎 ---
+    function computeExcelIndicators(closes) {
+      if (!closes || closes.length < 16) return null;
+
+      // 1. MA4 與 MA30
+      const last4 = closes.slice(-4);
+      const ma4 = last4.reduce((a, b) => a + b, 0) / last4.length;
+      const last30 = closes.slice(-30);
+      const ma30 = last30.reduce((a, b) => a + b, 0) / last30.length;
+
+      // 2. 計算單日漲跌 Gain / Loss
+      const gains = [];
+      const losses = [];
+      for (let i = 1; i < closes.length; i++) {
+        const diff = closes[i] - closes[i - 1];
+        gains.push(diff > 0 ? diff : 0);
+        losses.push(diff < 0 ? Math.abs(diff) : 0);
+      }
+
+      // 3. Wilder 平滑 RSI(2)
+      let avgGain2 = (gains[0] + gains[1]) / 2;
+      let avgLoss2 = (losses[0] + losses[1]) / 2;
+      for (let i = 2; i < gains.length; i++) {
+        avgGain2 = (avgGain2 * 1 + gains[i]) / 2;
+        avgLoss2 = (avgLoss2 * 1 + losses[i]) / 2;
+      }
+      const rsi2 = avgLoss2 === 0 ? 100 : 100 - (100 / (1 + (avgGain2 / avgLoss2)));
+
+      // 4. Wilder 平滑 RSI(14)
+      let avgGain14 = gains.slice(0, 14).reduce((a, b) => a + b, 0) / 14;
+      let avgLoss14 = losses.slice(0, 14).reduce((a, b) => a + b, 0) / 14;
+      for (let i = 14; i < gains.length; i++) {
+        avgGain14 = (avgGain14 * 13 + gains[i]) / 14;
+        avgLoss14 = (avgLoss14 * 13 + losses[i]) / 14;
+      }
+      const rsi14 = avgLoss14 === 0 ? 100 : 100 - (100 / (1 + (avgGain14 / avgLoss14)));
+
+      return {
+        latestRawClose: closes[closes.length - 1],
+        rsi2: Number(rsi2.toFixed(2)),
+        rsi14: Number(rsi14.toFixed(2)),
+        ma4: Number(ma4.toFixed(3)),
+        ma30: Number(ma30.toFixed(3))
+      };
+    }
+
+    // --- 透過多節點 CORS Proxy 抓取 Yahoo Finance 歷史日線與即時收市價 ---
+    async function fetchYahooChartWithFallback(symbol) {
+      const urls = [
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=3mo&interval=1d`,
+        `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=3mo&interval=1d`
+      ];
+      const proxies = [
+        (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+        (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+        (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`
+      ];
+
+      let lastErr = null;
+      for (const targetUrl of urls) {
+        for (const buildProxyUrl of proxies) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 6500);
+            const res = await fetch(buildProxyUrl(targetUrl), {
+              cache: 'no-store',
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const json = await res.json();
+            const result = json?.chart?.result?.[0];
+            if (!result) throw new Error('無效報價結構');
+
+            const rawCloses = result.indicators?.quote?.[0]?.close || [];
+            const cleanCloses = rawCloses.filter((v) => typeof v === 'number' && !isNaN(v));
+            const metaPrice = result.meta?.regularMarketPrice;
+            if (typeof metaPrice === 'number' && !isNaN(metaPrice) && cleanCloses.length > 0) {
+              cleanCloses[cleanCloses.length - 1] = metaPrice;
+            }
+            if (cleanCloses.length >= 16) {
+              return {
+                closes: cleanCloses,
+                marketTime: result.meta?.regularMarketTime
+              };
+            }
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+      }
+      throw lastErr || new Error(`無法獲取 ${symbol} 報價`);
+    }
+
+    // --- 透過 Twelve Data 官方直連 API (零 CORS 代理限制，支援 LSE) ---
+    // --- 透過 Twelve Data 官方直連 API (零 CORS 代理限制，使用免費版支援之美股標尺) ---
+    async function fetchTwelveDataSeries(tdSymbol, apiKey) {
+      const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(tdSymbol)}&interval=1day&outputsize=65&apikey=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`TwelveData HTTP ${res.status}`);
+      const json = await res.json();
+      if (json.status === 'error') throw new Error(json.message || 'TwelveData API 錯誤');
+      const values = json?.values;
+      if (!Array.isArray(values) || values.length < 16) {
+        throw new Error(`${tdSymbol} 歷史日線不足`);
+      }
+      const closes = values
+        .map((row) => parseFloat(row.close))
+        .filter((v) => !isNaN(v))
+        .reverse();
+      return { closes };
+    }
+
+    // --- 主 React 元件 ---
+    function PortfolioDashboard() {
+      const [holdings, setHoldings] = useState(() => {
+        const saved = localStorage.getItem('IBUK_QUANT_HOLDINGS_V2');
+        return saved ? JSON.parse(saved) : INITIAL_HOLDINGS;
+      });
+
+      const [freeCash, setFreeCash] = useState(() => {
+        const saved = localStorage.getItem('IBUK_FREE_CASH_V2');
+        return saved ? parseFloat(saved) : 1989.15;
+      });
+
+      const [lqq3Config, setLqq3Config] = useState(() => {
+        const saved = localStorage.getItem('IBUK_LQQ3_CONFIG_V2');
+        return saved ? JSON.parse(saved) : INITIAL_LQQ3_PARAMS;
+      });
+
+      const [activeTab, setActiveTab] = useState('summary'); // 'summary' | 'lqq3' | 'import' | 'settings'
+      const [rebalanceThreshold, setRebalanceThreshold] = useState(300);
+      const [importText, setImportText] = useState('');
+      const [importMsg, setImportMsg] = useState({ type: '', text: '' });
+      const [lastUpdated, setLastUpdated] = useState(new Date().toLocaleTimeString('zh-HK'));
+      const [editingTicker, setEditingTicker] = useState(null);
+      const [isFetchingApi, setIsFetchingApi] = useState(false);
+      const [twelveDataKey, setTwelveDataKey] = useState(() => {
+        return localStorage.getItem('IBUK_TWELVEDATA_KEY') || '28082edd02574ff185ef7f7a8416e6d1';
+      });
+      const [showApiConfig, setShowApiConfig] = useState(false);
+      const [apiStatus, setApiStatus] = useState({
+        type: 'idle',
+        message: '已啟用 GitHub 全自動雲端同步引擎，打開網頁即自動讀取最新 IBUK 與倫敦 LSE 數據！',
+        gbpUsdRate: 1.318
+      });
+
+      // --- 啟動時自動讀取 GitHub Actions 生成的 data.json ---
+      useEffect(() => {
+        fetch('./data.json?t=' + Date.now(), { cache: 'no-store' })
+          .then(res => {
+            if (!res.ok) throw new Error('尚未生成 data.json');
+            return res.json();
+          })
+          .then(cloud => {
+            if (!cloud || !cloud.marketData) return;
+            setHoldings(prev => prev.map(h => {
+              const m = cloud.marketData[h.ticker];
+              const p = cloud.ibkrPositions ? cloud.ibkrPositions[h.ticker] : null;
+              return {
+                ...h,
+                position: (p && p.position !== undefined) ? p.position : h.position,
+                avgPrice: (p && p.avgPrice) ? p.avgPrice : h.avgPrice,
+                costBasis: (p && p.costBasis) ? p.costBasis : h.costBasis,
+                price: (m && m.priceGbp) ? m.priceGbp : h.price,
+                rsi2: (m && m.rsi2 !== undefined) ? m.rsi2 : h.rsi2,
+                rsi14: (m && m.rsi14 !== undefined) ? m.rsi14 : h.rsi14,
+                ma4: (m && m.ma4 !== undefined) ? m.ma4 : h.ma4,
+                ma30: (m && m.ma30 !== undefined) ? m.ma30 : h.ma30
+              };
+            }));
+            if (cloud.freeCash !== null && cloud.freeCash !== undefined) {
+              setFreeCash(cloud.freeCash);
+            }
+            if (cloud.updatedAt) {
+              setLastUpdated(cloud.updatedAt);
+            }
+            setApiStatus({
+              type: 'success',
+              message: `已自動載入雲端最新快照 (${cloud.updatedAt}) • 含 IBUK 持倉與倫敦交易所真實 LSE 股價及 RSI/MA！`,
+              gbpUsdRate: cloud.gbpUsdRate || 1.318
+            });
+          })
+          .catch(() => {
+            // 若在本地單獨開啟尚未連接 GitHub data.json，則靜默沿用本地儲存數據
+          });
+      }, []);
+
+      useEffect(() => {
+        localStorage.setItem('IBUK_TWELVEDATA_KEY', twelveDataKey);
+      }, [twelveDataKey]);
+
+      useEffect(() => {
+        localStorage.setItem('IBUK_QUANT_HOLDINGS_V2', JSON.stringify(holdings));
+      }, [holdings]);
+
+      useEffect(() => {
+        localStorage.setItem('IBUK_FREE_CASH_V2', freeCash.toString());
+      }, [freeCash]);
+
+      useEffect(() => {
+        localStorage.setItem('IBUK_LQQ3_CONFIG_V2', JSON.stringify(lqq3Config));
+      }, [lqq3Config]);
+
+      // 1. 各持倉市值與盈虧
+      const calculatedHoldings = useMemo(() => {
+        return holdings.map(h => {
+          const mktVal = h.position * h.price;
+          const costVal = h.costBasis > 0 ? h.costBasis : (h.position * h.avgPrice);
+          const pnl = mktVal - costVal;
+          const pnlPct = costVal > 0 ? (pnl / costVal) * 100 : 0;
+          return { ...h, mktVal, costVal, pnl, pnlPct };
+        });
+      }, [holdings]);
+
+      // 2. 總持倉市值
+      const totalPositionsVal = useMemo(() => {
+        return calculatedHoldings.reduce((sum, item) => sum + item.mktVal, 0);
+      }, [calculatedHoldings]);
+
+      // 3. 總組合資產總值 Total NAV
+      const totalNAV = useMemo(() => {
+        return totalPositionsVal + freeCash;
+      }, [totalPositionsVal, freeCash]);
+
+      // 4. LQQ3 預留子彈計算
+      const lqq3ReservedCash = useMemo(() => {
+        return lqq3Config.tranches
+          .filter(t => t.status === 'PENDING')
+          .reduce((sum, t) => sum + (t.shares * t.buyPriceGbp), 0);
+      }, [lqq3Config]);
+
+      // 5. 真實 CSH2 防守佔比
+      const csh2Item = calculatedHoldings.find(h => h.ticker === 'CSH2');
+      const csh2Value = csh2Item ? csh2Item.mktVal : 0;
+      const trueCsh2Denominator = Math.max(1, totalNAV - lqq3ReservedCash);
+      const trueCsh2Pct = (csh2Value / trueCsh2Denominator) * 100;
+      const isCsh2Safe = trueCsh2Pct >= 20.0;
+
+      // 6. 總流動性儲備
+      const totalLiquidity = csh2Value + freeCash;
+      const totalLiquidityPct = totalNAV > 0 ? (totalLiquidity / totalNAV) * 100 : 0;
+
+      // 7. 未實現總盈虧
+      const totalCostBasis = useMemo(() => {
+        return calculatedHoldings.reduce((sum, item) => sum + item.costVal, 0);
+      }, [calculatedHoldings]);
+      const totalUnrealizedPnL = totalPositionsVal - totalCostBasis;
+      const totalPnLPct = totalCostBasis > 0 ? (totalUnrealizedPnL / totalCostBasis) * 100 : 0;
+
+      // 8. 主矩陣表格數據增強
+      const summaryTableData = useMemo(() => {
+        return calculatedHoldings.map(item => {
+          const currentWeight = totalNAV > 0 ? (item.mktVal / totalNAV) * 100 : 0;
+          const targetValue = totalNAV * (item.targetPct / 100);
+          const difference = item.mktVal - targetValue;
+
+          let signal = { code: 'HOLD', label: '⏸️ 按兵不動', color: 'bg-slate-800 text-slate-300' };
+
+          if (item.ticker === 'LQQ3') {
+            const daysHeld = calcTradingDays(lqq3Config.buyDate);
+            const vnrtItem = calculatedHoldings.find(h => h.ticker === 'VNRT');
+            const isVnrtOverbought = vnrtItem && vnrtItem.rsi2 > 85;
+
+            if (item.pnlPct >= lqq3Config.takeProfitPct || isVnrtOverbought) {
+              signal = { code: 'TAKE_PROFIT', label: '🎯 觸發止賺 ! (沽出半倉鎖利)', color: 'bg-emerald-600 text-white font-bold animate-pulse' };
+            } else if (daysHeld >= lqq3Config.targetHoldDays) {
+              signal = { code: 'TIME_STOP', label: `⚠️ 時間止損 (${daysHeld}/${lqq3Config.targetHoldDays}日)`, color: 'bg-amber-600 text-white font-bold' };
+            } else {
+              signal = { code: 'HOLD_ATTACK', label: `🚀 戰術持倉中 (第 ${daysHeld} 交易日)`, color: 'bg-indigo-900/80 text-indigo-200 border border-indigo-500/50' };
+            }
+          } else if (item.ticker === 'CRUD') {
+            signal = { code: 'CLOSED', label: '❌ 已退場歸零', color: 'bg-slate-900 text-slate-500' };
+          } else {
+            const absDiff = Math.abs(difference);
+            const isUnderweight = difference < 0;
+            const isOverweight = difference > 0;
+
+            if (isUnderweight) {
+              if (item.rsi2 < 15 && absDiff >= rebalanceThreshold && item.ticker !== 'CSH2') {
+                const estShares = Math.max(1, Math.round(absDiff / item.price));
+                signal = {
+                  code: 'BUY',
+                  label: `🟢 建議買入 ~${estShares} 股`,
+                  color: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold'
+                };
+              } else if (item.rsi2 < 15 && absDiff < rebalanceThreshold && item.ticker !== 'CSH2') {
+                signal = {
+                  code: 'WATCH_BUY',
+                  label: `👀 超賣觀察 (缺口<£${rebalanceThreshold})`,
+                  color: 'bg-cyan-950/80 text-cyan-300 border border-cyan-700/50'
+                };
+              } else if (item.ticker === 'CSH2' && !isCsh2Safe) {
+                const estShares = Math.ceil((0.20 * trueCsh2Denominator - csh2Value) / item.price);
+                signal = {
+                  code: 'DEFEND_CSH2',
+                  label: `🚨 補充防線 +${estShares} 股`,
+                  color: 'bg-rose-600 text-white font-bold animate-pulse'
+                };
+              }
+            } else if (isOverweight) {
+              if (item.rsi2 > 85 && absDiff >= rebalanceThreshold && item.ticker !== 'CSH2') {
+                const estShares = Math.max(1, Math.round(absDiff / item.price));
+                signal = {
+                  code: 'TAKE_PROFIT',
+                  label: `🔴 超買止賺 ~${estShares} 股`,
+                  color: 'bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold'
+                };
+              }
+            }
+          }
+
+          return {
+            ...item,
+            currentWeight,
+            targetValue,
+            difference,
+            signal
+          };
+        });
+      }, [calculatedHoldings, totalNAV, rebalanceThreshold, lqq3Config, isCsh2Safe, trueCsh2Denominator, csh2Value]);
+
+      const lqq3Item = useMemo(() => {
+        return summaryTableData.find(h => h.ticker === 'LQQ3');
+      }, [summaryTableData]);
+
+      const lqq3DaysHeld = useMemo(() => {
+        return calcTradingDays(lqq3Config.buyDate);
+      }, [lqq3Config.buyDate]);
+
+      const handleCellEdit = (ticker, field, rawVal) => {
+        const val = parseFloat(rawVal);
+        if (isNaN(val) || val < 0) return;
+        setHoldings(prev => prev.map(h => {
+          if (h.ticker !== ticker) return h;
+          const updated = { ...h, [field]: val };
+          if (field === 'position') {
+            updated.costBasis = val * updated.avgPrice;
+          }
+          return updated;
+        }));
+        setLastUpdated(new Date().toLocaleTimeString('zh-HK'));
+      };
+
+      // 真實市場 API 抓數並重算全組合 RSI(2), RSI(14), MA4, MA30
+      const fetchLiveMarketData = async () => {
+        if (isFetchingApi) return;
+        setIsFetchingApi(true);
+        const useTwelveData = twelveDataKey.trim().length > 5;
+        setApiStatus(prev => ({
+          ...prev,
+          type: 'loading',
+          message: useTwelveData
+            ? '正在透過 Twelve Data 官方直連 API 抓取對應指數日線並重算 Wilder RSI/MA...'
+            : '正在連接多節點代理抓取倫敦交易所 (LSE) 3 個月日線並重算 Wilder RSI/MA...'
+        }));
+
+        try {
+          let gbpUsd = apiStatus.gbpUsdRate || 1.318;
+          try {
+            const fxChart = useTwelveData
+              ? await fetchTwelveDataSeries('GBP/USD', twelveDataKey.trim())
+              : await fetchYahooChartWithFallback('GBPUSD=X');
+            if (fxChart.closes.length > 0) {
+              gbpUsd = fxChart.closes[fxChart.closes.length - 1];
+            }
+          } catch (fxErr) {
+            console.warn('GBPUSD 匯率抓數失敗，沿用預設匯率:', fxErr);
+          }
+
+          const tickers = Object.keys(LSE_TICKER_META);
+          const resultsMap = {};
+          let successCount = 0;
+          let lastTdError = '';
+
+          if (useTwelveData) {
+            // 僅抓取有配置美股標尺的 8 隻風險資產 ETF (跳過 CSH2 與已清倉 CRUD，總共 8 次請求剛好壓在每分鐘 8 次免費上限內，零等待！)
+            const proxyTickers = tickers.filter(t => LSE_TICKER_META[t].tdProxy);
+            let creditsUsedThisMin = 1; // GBP/USD 已用 1 個額度
+
+            for (let i = 0; i < proxyTickers.length; i++) {
+              const ticker = proxyTickers[i];
+              const tdSymbol = LSE_TICKER_META[ticker].tdProxy;
+
+              if (creditsUsedThisMin >= 8) {
+                for (let sec = 62; sec > 0; sec--) {
+                  setApiStatus(prev => ({
+                    ...prev,
+                    type: 'loading',
+                    message: `已成功抓取 ${successCount}/${proxyTickers.length} 隻，自動等待 ${sec} 秒避開免費版每分鐘 8 次上限 (剩餘: ${proxyTickers.slice(i).join(', ')})...`
+                  }));
+                  await new Promise(r => setTimeout(r, 1000));
+                }
+                creditsUsedThisMin = 0;
+              }
+
+              setApiStatus(prev => ({
+                ...prev,
+                type: 'loading',
+                message: `正在直連 Twelve Data 抓取 ${ticker} [標尺: ${tdSymbol}] (${i + 1}/${proxyTickers.length})...`
+              }));
+
+              try {
+                const chart = await fetchTwelveDataSeries(tdSymbol, twelveDataKey.trim());
+                creditsUsedThisMin++;
+                const indicators = computeExcelIndicators(chart.closes);
+                if (indicators) {
+                  resultsMap[ticker] = { meta: LSE_TICKER_META[ticker], indicators, isProxy: true, proxySymbol: tdSymbol };
+                  successCount++;
+                }
+              } catch (err) {
+                creditsUsedThisMin++;
+                lastTdError = err.message;
+                console.warn(`TwelveData ${ticker} (${tdSymbol}) 失敗:`, err);
+              }
+            }
+          } else {
+            await Promise.all(
+              tickers.map(async (ticker) => {
+                const meta = LSE_TICKER_META[ticker];
+                try {
+                  const chart = await fetchYahooChartWithFallback(meta.yahoo);
+                  const indicators = computeExcelIndicators(chart.closes);
+                  if (indicators) {
+                    resultsMap[ticker] = { meta, indicators, isProxy: false };
+                    successCount++;
+                  }
+                } catch (err) {
+                  console.warn(`${meta.yahoo} 抓數失敗:`, err);
+                }
+              })
+            );
+          }
+
+          if (successCount === 0) {
+            throw new Error(
+              useTwelveData
+                ? `Twelve Data 回傳錯誤：${lastTdError || '請稍等 1 分鐘再試'}`
+                : '預覽沙盒或網絡封鎖了免費代理節點（建議下載 HTML 用本地瀏覽器打開，或按「API 設定」填入 Twelve Data 免費 Key）'
+            );
+          }
+
+          setHoldings(prev => prev.map(h => {
+            const fetched = resultsMap[h.ticker];
+            if (!fetched) return h;
+
+            const { meta, indicators, isProxy } = fetched;
+            // 若為 Twelve Data 美股標尺模式，僅更新精準 RSI(2)/RSI(14)/MA4/MA30 量化訊號，保留原本英鎊持倉價以免幣別錯位
+            if (isProxy) {
+              return {
+                ...h,
+                rsi2: indicators.rsi2,
+                rsi14: indicators.rsi14,
+                ma4: indicators.ma4,
+                ma30: indicators.ma30
+              };
+            }
+
+            let priceGbp = indicators.latestRawClose;
+            if (meta.isPence) {
+              priceGbp = priceGbp / 100;
+            }
+            if (meta.isUsd) {
+              priceGbp = priceGbp / gbpUsd;
+            }
+
+            return {
+              ...h,
+              price: Number(priceGbp.toFixed(4)),
+              rsi2: indicators.rsi2,
+              rsi14: indicators.rsi14,
+              ma4: indicators.ma4,
+              ma30: indicators.ma30
+            };
+          }));
+
+          const nowStr = new Date().toLocaleTimeString('zh-HK');
+          setLastUpdated(nowStr);
+          setApiStatus({
+            type: 'success',
+            message: useTwelveData
+              ? `已透過 Twelve Data 官方直連同步 ${successCount}/8 隻追蹤指數之真實 RSI(2)/RSI(14)/MA 訊號！(GBP/USD: ${gbpUsd.toFixed(4)})`
+              : `已同步 ${successCount}/${tickers.length} 隻 LSE ETF 真實行情並重算 RSI/MA (GBP/USD: ${gbpUsd.toFixed(4)})`,
+            gbpUsdRate: gbpUsd
+          });
+        } catch (err) {
+          setApiStatus(prev => ({
+            ...prev,
+            type: 'error',
+            message: `API 連線受阻：${err.message}`
+          }));
+        } finally {
+          setIsFetchingApi(false);
+        }
+      };
+
+      // 匯入解析 (支援 IBKR Flex CSV 或自訂剪貼簿表格)
+      const handleParseCSV = () => {
+        if (!importText.trim()) {
+          setImportMsg({ type: 'error', text: '請先貼上 CSV 內容或剪貼簿表格！' });
+          return;
+        }
+        try {
+          const lines = importText.trim().split('\n');
+          let updatedCount = 0;
+          const newHoldings = [...holdings];
+          let detectedCash = null;
+
+          lines.forEach(line => {
+            const cols = line.split(/[,\t;]/).map(c => c.replace(/^"|"$/g, '').trim());
+            if (cols.length >= 2) {
+              let rawSymbol = cols[0].toUpperCase();
+              const cleanSymbol = rawSymbol.replace(/L$/, '');
+
+              if (cleanSymbol === 'GBP' || cleanSymbol === 'CASH') {
+                const numVal = parseFloat(cols[cols.length - 1]) || parseFloat(cols[1]);
+                if (!isNaN(numVal)) detectedCash = numVal;
+              } else {
+                const targetIdx = newHoldings.findIndex(h => h.ticker === cleanSymbol);
+                if (targetIdx !== -1) {
+                  const pos = parseFloat(cols[1]);
+                  const costOrAvg = parseFloat(cols[2]);
+                  const mktPrice = parseFloat(cols[3]);
+
+                  if (!isNaN(pos)) {
+                    newHoldings[targetIdx].position = pos;
+                    if (!isNaN(costOrAvg) && costOrAvg > 0) {
+                      if (pos > 0 && costOrAvg > pos * 2) {
+                        newHoldings[targetIdx].costBasis = costOrAvg;
+                        newHoldings[targetIdx].avgPrice = costOrAvg / pos;
+                      } else {
+                        newHoldings[targetIdx].avgPrice = costOrAvg;
+                        newHoldings[targetIdx].costBasis = pos * costOrAvg;
+                      }
+                    }
+                    if (!isNaN(mktPrice) && mktPrice > 0) {
+                      newHoldings[targetIdx].price = mktPrice;
+                    }
+                    updatedCount++;
+                  }
+                }
+              }
+            }
+          });
+
+          if (updatedCount > 0 || detectedCash !== null) {
+            setHoldings(newHoldings);
+            if (detectedCash !== null) setFreeCash(detectedCash);
+            setLastUpdated(new Date().toLocaleTimeString('zh-HK'));
+            setImportMsg({
+              type: 'success',
+              text: `成功解析！已更新 ${updatedCount} 項持倉紀錄${detectedCash !== null ? `，並同步現金餘額為 ${fmtGBP(detectedCash)}` : ''}。`
+            });
+            setTimeout(() => setActiveTab('summary'), 1200);
+          } else {
+            setImportMsg({ type: 'error', text: '未能識別出標準代號 (CSH2, VNRT, LQQ3 等)，請確認格式為「代號, 股數, 均價, 現價」。' });
+          }
+        } catch (err) {
+          setImportMsg({ type: 'error', text: '解析發生錯誤：' + err.message });
+        }
+      };
+
+      const exportJSON = () => {
+        const payload = {
+          exportDate: new Date().toISOString(),
+          freeCash,
+          holdings,
+          lqq3Config
+        };
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(payload, null, 2));
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", `IBUK_Portfolio_Backup_${new Date().toISOString().slice(0, 10)}.json`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+      };
+
+      const importJSON = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const parsed = JSON.parse(event.target.result);
+            if (parsed.holdings) setHoldings(parsed.holdings);
+            if (parsed.freeCash !== undefined) setFreeCash(parsed.freeCash);
+            if (parsed.lqq3Config) setLqq3Config(parsed.lqq3Config);
+            setImportMsg({ type: 'success', text: 'JSON 備份檔恢復成功！所有數據已跨裝置同步。' });
+            setLastUpdated(new Date().toLocaleTimeString('zh-HK'));
+          } catch (err) {
+            setImportMsg({ type: 'error', text: '無效的 JSON 檔案格式。' });
+          }
+        };
+        reader.readAsText(file);
+      };
+
+      const resetDefault = () => {
+        setHoldings(INITIAL_HOLDINGS);
+        setFreeCash(1989.15);
+        setLqq3Config(INITIAL_LQQ3_PARAMS);
+        setImportMsg({ type: 'success', text: '已重置為 11月23日最新校正基準數據！' });
+      };
+
+      const updateTrancheStatus = (id, newStatus) => {
+        setLqq3Config(prev => ({
+          ...prev,
+          tranches: prev.tranches.map(t => t.id === id ? { ...t, status: newStatus } : t)
+        }));
+      };
+
+      return (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          {/* 頂部導航欄 */}
+          <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-6 border-b border-slate-800">
+            <div>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center shadow-lg shadow-emerald-950">
+                  <i className="fas fa-chart-line text-white text-lg"></i>
+                </div>
+                <div>
+                  <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+                    IBUK 量化配置戰情室
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      ISA 跨平台 Web App
+                    </span>
+                  </h1>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    全天候自動導航系統 • 告別 M365 限制 • 數據自動儲存於本機瀏覽器
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full md:w-auto">
+              <div className="text-xs text-slate-400 bg-slate-900 px-3 py-2 rounded-lg border border-slate-800 flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${apiStatus.type === 'error' ? 'bg-rose-500' : isFetchingApi ? 'bg-amber-400 animate-ping' : 'bg-emerald-500 animate-pulse'}`}></span>
+                更新: <span className="mono text-slate-200">{lastUpdated}</span>
+              </div>
+              <button
+                onClick={() => setShowApiConfig(prev => !prev)}
+                className={`px-3 py-2 rounded-lg text-xs font-medium transition flex items-center gap-1.5 border ${
+                  twelveDataKey.trim().length > 5
+                    ? 'bg-cyan-950/60 border-cyan-600/50 text-cyan-300 hover:bg-cyan-900/60'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                }`}
+                title="設定 Twelve Data 免費 API Key（直連 LSE 零 CORS 限制）"
+              >
+                <i className="fas fa-key"></i>
+                {twelveDataKey.trim().length > 5 ? 'TwelveData 已綁定' : 'API 設定'}
+              </button>
+              <button
+                onClick={fetchLiveMarketData}
+                disabled={isFetchingApi}
+                className={`px-3.5 py-2 rounded-lg text-xs font-medium transition flex items-center gap-1.5 border ${
+                  isFetchingApi
+                    ? 'bg-slate-800 text-slate-400 border-slate-700 cursor-wait'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-950/60'
+                }`}
+              >
+                <i className={`fas fa-sync-alt ${isFetchingApi ? 'animate-spin' : ''}`}></i>
+                {isFetchingApi ? '抓取報價與計算 RSI...' : '抓真實市場行情'}
+              </button>
+              <button
+                onClick={exportJSON}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3.5 py-2 rounded-lg text-xs font-medium transition flex items-center gap-1.5"
+                title="下載 JSON 備份以便在不同電腦間同步"
+              >
+                <i className="fas fa-download"></i> 匯出備份
+              </button>
+            </div>
+          </header>
+
+          {/* 可摺疊 API 直連設定面板 */}
+          {showApiConfig && (
+            <div className="mt-4 bg-slate-900 border border-cyan-500/40 rounded-xl p-4 shadow-xl">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-cyan-300 flex items-center gap-2">
+                    <i className="fas fa-satellite-dish"></i> Twelve Data 免費官方直連設定 (解決公司防火牆與沙盒代理限制)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    預覽視窗沙盒或部分公司網絡會封鎖免費 CORS 中轉站。前往 <a href="https://twelvedata.com/" target="_blank" rel="noreferrer" className="text-cyan-400 underline">twelvedata.com</a> 免費註冊取得 API Key 貼在下方，即可從瀏覽器直連倫敦交易所 (LSE)。
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <input
+                    type="text"
+                    value={twelveDataKey}
+                    onChange={(e) => setTwelveDataKey(e.target.value)}
+                    placeholder="貼上 Twelve Data API Key..."
+                    className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs mono text-white w-full sm:w-64 focus:border-cyan-500 focus:outline-none"
+                  />
+                  {twelveDataKey && (
+                    <button
+                      onClick={() => setTwelveDataKey('')}
+                      className="text-xs text-slate-400 hover:text-rose-400 px-2 py-1.5"
+                    >
+                      清除
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowApiConfig(false)}
+                    className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+                  >
+                    完成
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* API 報價引擎即時狀態橫幅 */}
+          {apiStatus.type !== 'idle' && (
+            <div className={`mt-4 px-4 py-2.5 rounded-xl border text-xs flex flex-wrap items-center justify-between gap-2 ${
+              apiStatus.type === 'success'
+                ? 'bg-emerald-950/50 border-emerald-500/30 text-emerald-300'
+                : apiStatus.type === 'error'
+                ? 'bg-rose-950/60 border-rose-500/40 text-rose-300'
+                : 'bg-amber-950/50 border-amber-500/30 text-amber-300'
+            }`}>
+              <div className="flex items-center gap-2">
+                <i className={`fas ${
+                  apiStatus.type === 'success' ? 'fa-check-circle' :
+                  apiStatus.type === 'error' ? 'fa-exclamation-triangle' : 'fa-spinner fa-spin'
+                }`}></i>
+                <span>{apiStatus.message}</span>
+              </div>
+              <span className="text-[11px] opacity-80">
+                * 技術指標採用與 Excel Data_XXX 一致之 Wilder's 平滑演算法重算
+              </span>
+            </div>
+          )}
+
+          {/* 4 張核心 KPI 監控卡片 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 my-6">
+            {/* KPI 1: Total NAV */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">總資產淨值 (Total NAV)</p>
+                  <h2 className="text-2xl sm:text-3xl font-bold text-white mono mt-1.5">{fmtGBP(totalNAV)}</h2>
+                </div>
+                <span className="p-2 bg-slate-800 rounded-lg text-slate-300">
+                  <i className="fas fa-wallet"></i>
+                </span>
+              </div>
+              <div className="mt-3 pt-3 border-t border-slate-800/80 flex justify-between items-center text-xs">
+                <span className="text-slate-400">股票持倉: <span className="text-slate-200 mono">{fmtGBP(totalPositionsVal)}</span></span>
+                <span className={`mono font-medium ${totalUnrealizedPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {totalUnrealizedPnL >= 0 ? '+' : ''}{fmtGBP(totalUnrealizedPnL)} ({fmtNum(totalPnLPct, 2)}%)
+                </span>
+              </div>
+            </div>
+
+            {/* KPI 2: 真實 CSH2 防守佔比 */}
+            <div className={`bg-slate-900 border rounded-2xl p-5 shadow-lg relative overflow-hidden ${isCsh2Safe ? 'border-emerald-500/30' : 'border-rose-500 animate-pulse'}`}>
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">真實 CSH2 置業防線</p>
+                  <div className="flex items-baseline gap-2 mt-1.5">
+                    <h2 className={`text-2xl sm:text-3xl font-bold mono ${isCsh2Safe ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {fmtNum(trueCsh2Pct, 2)}%
+                    </h2>
+                    <span className="text-xs text-slate-400">/ 目標 ≥ 20.0%</span>
+                  </div>
+                </div>
+                <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${isCsh2Safe ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-600 text-white'}`}>
+                  {isCsh2Safe ? '🛡️ 防線穩固' : '⚠️ 低於 20% 底線'}
+                </span>
+              </div>
+              <div className="mt-3 pt-3 border-t border-slate-800/80 flex justify-between items-center text-xs">
+                <span className="text-slate-400">CSH2 市值: <span className="text-slate-200 mono">{fmtGBP(csh2Value)}</span></span>
+                <span className="text-slate-500" title="扣除 LQQ3 預留掛單子彈後之真實佔比">已剔除 LQQ3 預留現金</span>
+              </div>
+            </div>
+
+            {/* KPI 3: 總流動性儲備 */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">總流動性儲備 (CSH2+現金)</p>
+                  <h2 className="text-2xl sm:text-3xl font-bold text-cyan-400 mono mt-1.5">{fmtGBP(totalLiquidity)}</h2>
+                </div>
+                <span className="px-2 py-1 rounded-lg bg-cyan-950 text-cyan-300 border border-cyan-800/50 text-xs mono font-semibold">
+                  {fmtNum(totalLiquidityPct, 2)}%
+                </span>
+              </div>
+              <div className="mt-3 pt-3 border-t border-slate-800/80 flex justify-between items-center text-xs">
+                <span className="text-slate-400">自由現金 (Free Cash):</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-slate-400">£</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={freeCash}
+                    onChange={(e) => setFreeCash(parseFloat(e.target.value) || 0)}
+                    className="w-24 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-right mono text-cyan-300 font-semibold focus:border-cyan-500 focus:outline-none"
+                    title="直接點擊可修改 IBUK 自由現金餘額"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* KPI 4: LQQ3 衛星倉專區 */}
+            <div className="bg-slate-900 border border-indigo-500/30 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-xs font-medium text-indigo-300 uppercase tracking-wider">LQQ3 3x納指衛星進攻倉</p>
+                  <div className="flex items-baseline gap-2 mt-1.5">
+                    <h2 className="text-2xl sm:text-3xl font-bold text-white mono">
+                      {lqq3Item ? fmtGBP(lqq3Item.mktVal) : "£0.00"}
+                    </h2>
+                    {lqq3Item && lqq3Item.position > 0 && (
+                      <span className={`text-xs mono font-bold ${lqq3Item.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {lqq3Item.pnl >= 0 ? '+' : ''}{fmtNum(lqq3Item.pnlPct, 2)}%
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  第 {lqq3DaysHeld} 交易日
+                </span>
+              </div>
+              <div className="mt-3 pt-3 border-t border-slate-800/80 flex justify-between items-center text-xs">
+                <span className="text-slate-400">待命掛單預留: <span className="text-amber-300 mono">{fmtGBP(lqq3ReservedCash)}</span></span>
+                <span className={`mono ${freeCash >= lqq3ReservedCash ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {freeCash >= lqq3ReservedCash ? `餘裕 +${fmtGBP(freeCash - lqq3ReservedCash)}` : '⚠️ 現金不足覆蓋掛單'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* 導航分頁 Tabs */}
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-3 mb-6">
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setActiveTab('summary')}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2 ${
+                  activeTab === 'summary'
+                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950'
+                    : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+                }`}
+              >
+                <i className="fas fa-table"></i> 量化配置主矩陣 (Summary)
+              </button>
+
+              <button
+                onClick={() => setActiveTab('lqq3')}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2 ${
+                  activeTab === 'lqq3'
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-950'
+                    : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+                }`}
+              >
+                <i className="fas fa-rocket"></i> LQQ3 獨立衛星戰術艙
+                <span className="text-[10px] bg-indigo-950 text-indigo-200 px-1.5 py-0.5 rounded-full border border-indigo-400/30">
+                  {lqq3DaysHeld}D
+                </span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('import')}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2 ${
+                  activeTab === 'import'
+                    ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-950'
+                    : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+                }`}
+              >
+                <i className="fas fa-file-import"></i> IBKR 匯入 / 跨裝置同步
+              </button>
+            </div>
+
+            {activeTab === 'summary' && (
+              <div className="flex items-center gap-2 text-xs bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-800">
+                <span className="text-slate-400">最低調倉金額門檻:</span>
+                <span className="text-slate-300 font-bold">£</span>
+                <input
+                  type="number"
+                  step="50"
+                  value={rebalanceThreshold}
+                  onChange={(e) => setRebalanceThreshold(Number(e.target.value) || 0)}
+                  className="w-16 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-center mono text-emerald-400 font-bold"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* =========================================================
+              分頁 1: 主資產配置矩陣 (Summary Table)
+             ========================================================= */}
+          {activeTab === 'summary' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
+              <div className="p-4 sm:p-5 border-b border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <i className="fas fa-layer-group text-emerald-400"></i> 全天候自動導航持倉與量化訊號
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    提示：直接點擊表格中的 <span className="text-slate-200 underline decoration-dotted">股數 (Position)</span> 或 <span className="text-slate-200 underline decoration-dotted">最新價格 (£)</span> 即可行內修改並即時重算。
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-[11px]">
+                  <span className="px-2 py-1 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-700/40">RSI(2) &lt; 15 = 短線超賣買入區</span>
+                  <span className="px-2 py-1 rounded bg-rose-950/80 text-rose-300 border border-rose-700/40">RSI(2) &gt; 85 = 短線過熱止賺區</span>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-950/80 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-800">
+                      <th className="py-3.5 px-4 font-semibold">代號 / 名稱</th>
+                      <th className="py-3.5 px-3 text-right font-semibold">持倉股數</th>
+                      <th className="py-3.5 px-3 text-right font-semibold">平均成本 (£)</th>
+                      <th className="py-3.5 px-3 text-right font-semibold">最新價格 (£)</th>
+                      <th className="py-3.5 px-3 text-right font-semibold">當前市值 (£)</th>
+                      <th className="py-3.5 px-3 text-right font-semibold">實際 / 目標</th>
+                      <th className="py-3.5 px-3 text-right font-semibold">金額缺口 (£)</th>
+                      <th className="py-3.5 px-3 text-center font-semibold">RSI(2) / RSI(14)</th>
+                      <th className="py-3.5 px-3 text-right font-semibold">MA4 / MA30</th>
+                      <th className="py-3.5 px-4 font-semibold">量化執行訊號</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/70 text-sm">
+                    {summaryTableData.map((row) => {
+                      const isUnder = row.difference < -rebalanceThreshold && row.ticker !== 'CRUD' && row.ticker !== 'LQQ3';
+                      const isOver = row.difference > rebalanceThreshold && row.ticker !== 'CRUD' && row.ticker !== 'LQQ3';
+                      const isRsiOversold = row.rsi2 < 15 && row.ticker !== 'CSH2' && row.ticker !== 'CRUD';
+                      const isRsiOverbought = row.rsi2 > 85 && row.ticker !== 'CSH2' && row.ticker !== 'CRUD';
+
+                      return (
+                        <tr key={row.ticker} className={`hover:bg-slate-800/40 transition ${row.ticker === 'CRUD' ? 'opacity-50' : ''}`}>
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-2">
+                              <span className={`font-bold mono px-2 py-0.5 rounded text-xs ${
+                                row.category === 'defensive' ? 'bg-emerald-500/20 text-emerald-300' :
+                                row.category === 'satellite' ? 'bg-indigo-500/20 text-indigo-300' :
+                                row.category === 'hedge' ? 'bg-amber-500/20 text-amber-300' :
+                                row.category === 'closed' ? 'bg-slate-800 text-slate-500' :
+                                'bg-slate-800 text-slate-200'
+                              }`}>
+                                {row.ticker}
+                              </span>
+                              <div>
+                                <div className="font-medium text-slate-100 text-xs sm:text-sm">{row.name}</div>
+                                <div className="text-[11px] text-slate-500 hidden sm:block">{row.note}</div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-3 text-right mono">
+                            {editingTicker === `${row.ticker}-pos` ? (
+                              <input
+                                type="number"
+                                autoFocus
+                                defaultValue={row.position}
+                                onBlur={(e) => { handleCellEdit(row.ticker, 'position', e.target.value); setEditingTicker(null); }}
+                                onKeyDown={(e) => { if (e.key === 'Enter') { handleCellEdit(row.ticker, 'position', e.target.value); setEditingTicker(null); } }}
+                                className="w-20 bg-slate-950 border border-emerald-500 rounded px-1.5 py-0.5 text-right text-white"
+                              />
+                            ) : (
+                              <span
+                                onClick={() => setEditingTicker(`${row.ticker}-pos`)}
+                                className="cursor-pointer hover:text-emerald-400 border-b border-dashed border-slate-600 pb-0.5"
+                                title="點擊修改股數"
+                              >
+                                {fmtNum(row.position, 0)}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-3 text-right mono text-xs text-slate-400">
+                            {row.avgPrice > 0 ? fmtNum(row.avgPrice, 2) : '-'}
+                          </td>
+
+                          <td className="py-3.5 px-3 text-right mono">
+                            {editingTicker === `${row.ticker}-price` ? (
+                              <input
+                                type="number"
+                                step="0.0001"
+                                autoFocus
+                                defaultValue={row.price}
+                                onBlur={(e) => { handleCellEdit(row.ticker, 'price', e.target.value); setEditingTicker(null); }}
+                                onKeyDown={(e) => { if (e.key === 'Enter') { handleCellEdit(row.ticker, 'price', e.target.value); setEditingTicker(null); } }}
+                                className="w-24 bg-slate-950 border border-emerald-500 rounded px-1.5 py-0.5 text-right text-white"
+                              />
+                            ) : (
+                              <span
+                                onClick={() => setEditingTicker(`${row.ticker}-price`)}
+                                className="cursor-pointer hover:text-emerald-400 border-b border-dashed border-slate-600 pb-0.5"
+                                title="點擊修改最新價"
+                              >
+                                {fmtNum(row.price, row.price < 10 ? 4 : 2)}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-3 text-right mono font-semibold text-white">
+                            <div>{fmtGBP(row.mktVal)}</div>
+                            {row.position > 0 && (
+                              <div className={`text-[10px] ${row.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {row.pnl >= 0 ? '+' : ''}{fmtNum(row.pnlPct, 1)}%
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-3 text-right mono text-xs">
+                            <span className="text-slate-100 font-semibold">{fmtNum(row.currentWeight, 1)}%</span>
+                            <span className="text-slate-500"> / {fmtNum(row.targetPct, 0)}%</span>
+                          </td>
+
+                          <td className={`py-3.5 px-3 text-right mono font-semibold text-xs ${
+                            row.ticker === 'LQQ3' || row.ticker === 'CRUD' ? 'text-slate-500' :
+                            isUnder ? 'text-amber-400' :
+                            isOver ? 'text-cyan-400' : 'text-slate-400'
+                          }`}>
+                            {row.ticker === 'LQQ3' ? '獨立倉' :
+                             row.ticker === 'CRUD' ? '£0.00' :
+                             `${row.difference >= 0 ? '+' : ''}${fmtGBP(row.difference)}`}
+                          </td>
+
+                          <td className="py-3.5 px-3 text-center mono text-xs">
+                            <span className={`px-2 py-0.5 rounded font-bold ${
+                              isRsiOversold ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
+                              isRsiOverbought ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' :
+                              'text-slate-300'
+                            }`}>
+                              {fmtNum(row.rsi2, 1)}
+                            </span>
+                            <span className="text-slate-500 ml-1">/ {fmtNum(row.rsi14, 0)}</span>
+                          </td>
+
+                          <td className="py-3.5 px-3 text-right mono text-[11px] text-slate-400">
+                            <div>{fmtNum(row.ma4, 1)}</div>
+                            <div className="text-slate-500">{fmtNum(row.ma30, 1)}</div>
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <span className={`inline-block px-2.5 py-1 rounded-lg text-xs whitespace-nowrap ${row.signal.color}`}>
+                              {row.signal.label}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {/* 自由現金總結行 */}
+                    <tr className="bg-slate-950/60 font-medium border-t-2 border-slate-800">
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold mono px-2 py-0.5 rounded text-xs bg-cyan-500/20 text-cyan-300">CASH</span>
+                          <div>
+                            <div className="text-slate-200 text-xs sm:text-sm">IBUK 帳戶自由現金 (Free Cash GBP)</div>
+                            <div className="text-[11px] text-slate-500">預留覆蓋 LQQ3 第三注 £1,701.00，剩餘約 {fmtGBP(freeCash - lqq3ReservedCash)} 可供低吸</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td colSpan="3" className="py-3.5 px-3 text-right text-xs text-slate-400">直接於頂部 KPI 卡可編輯</td>
+                      <td className="py-3.5 px-3 text-right mono font-bold text-cyan-400">{fmtGBP(freeCash)}</td>
+                      <td className="py-3.5 px-3 text-right mono text-xs text-cyan-300">
+                        {fmtNum((freeCash / Math.max(1, totalNAV)) * 100, 2)}%
+                      </td>
+                      <td colSpan="4" className="py-3.5 px-4 text-xs text-slate-400">
+                        總資產合計 Total NAV: <span className="text-white font-bold mono ml-1">{fmtGBP(totalNAV)}</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* =========================================================
+              分頁 2: LQQ3 獨立衛星戰術艙
+             ========================================================= */}
+          {activeTab === 'lqq3' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-1 bg-slate-900 border border-indigo-500/30 rounded-2xl p-5 shadow-xl space-y-5">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <h3 className="font-bold text-white flex items-center gap-2">
+                    <i className="fas fa-stopwatch text-indigo-400"></i> 槓桿戰術參數與時間止損
+                  </h3>
+                  <span className="text-xs bg-indigo-950 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">
+                    3x 每日槓桿風控
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">首筆進場成交日期 (Day 0)</label>
+                  <input
+                    type="date"
+                    value={lqq3Config.buyDate}
+                    onChange={(e) => setLqq3Config({ ...lqq3Config, buyDate: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white mono focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">時間止損上限 (Time-Stop 交易日)</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {[15, 30, 45, 60].map(days => (
+                      <button
+                        key={days}
+                        onClick={() => setLqq3Config({ ...lqq3Config, targetHoldDays: days })}
+                        className={`py-2 rounded-xl text-xs font-bold mono transition border ${
+                          lqq3Config.targetHoldDays === days
+                            ? 'bg-indigo-600 text-white border-indigo-400'
+                            : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                        }`}
+                      >
+                        {days} 日
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1.5">
+                    系統自動扣除星期六、日計算交易日。目前已持有 <span className="text-indigo-300 font-bold">{lqq3DaysHeld}</span> 個交易日。
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">目標止賺幅度 (%)</label>
+                    <input
+                      type="number"
+                      value={lqq3Config.takeProfitPct}
+                      onChange={(e) => setLqq3Config({ ...lqq3Config, takeProfitPct: Number(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-emerald-400 font-bold mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">無條件硬止損 (%)</label>
+                    <input
+                      type="number"
+                      value={lqq3Config.hardStopLossPct}
+                      onChange={(e) => setLqq3Config({ ...lqq3Config, hardStopLossPct: Number(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-rose-400 font-bold mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-slate-950 rounded-xl p-4 border border-slate-800 space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">現有 LQQ3 持倉：</span>
+                    <span className="text-white font-bold mono">{lqq3Item ? lqq3Item.position : 0} 股 @ {lqq3Item ? fmtGBP(lqq3Item.avgPrice) : '£0'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">首段止賺目標價 (+{lqq3Config.takeProfitPct}%)：</span>
+                    <span className="text-emerald-400 font-bold mono">
+                      {lqq3Item && lqq3Item.avgPrice > 0 ? fmtGBP(lqq3Item.avgPrice * (1 + lqq3Config.takeProfitPct / 100)) : '£0'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">無條件止損底線 (-{lqq3Config.hardStopLossPct}%)：</span>
+                    <span className="text-rose-400 font-bold mono">
+                      {lqq3Item && lqq3Item.avgPrice > 0 ? fmtGBP(lqq3Item.avgPrice * (1 - lqq3Config.hardStopLossPct / 100)) : '£0'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between">
+                <div>
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-800 pb-3 mb-4">
+                    <div>
+                      <h3 className="font-bold text-white flex items-center gap-2">
+                        <i className="fas fa-chess-knight text-amber-400"></i> 三段式網格掛單與子彈管理 (3-Tranche Grid)
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        將 GTC 限價單狀態切換為「已成交」或「掛單中」，頂部 20% CSH2 防線公式會自動扣除未成交的預留子彈。
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {lqq3Config.tranches.map((tranche) => {
+                      const trancheCost = tranche.shares * tranche.buyPriceGbp;
+                      const isFilled = tranche.status === 'FILLED';
+                      return (
+                        <div
+                          key={tranche.id}
+                          className={`p-4 rounded-xl border transition flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${
+                            isFilled
+                              ? 'bg-emerald-950/20 border-emerald-500/40'
+                              : 'bg-slate-950/80 border-slate-800'
+                          }`}
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-white text-sm">{tranche.label}</span>
+                              <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                                isFilled ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
+                              }`}>
+                                {isFilled ? '✅ 已成交 (FILLED)' : '⏳ GTC 掛單待命 (PENDING)'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-400">{tranche.note}</p>
+                          </div>
+
+                          <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
+                            <div className="text-right mono">
+                              <div className="text-sm font-bold text-white">{tranche.shares} 股 @ {fmtGBP(tranche.buyPriceGbp)}</div>
+                              <div className="text-xs text-slate-400">資金: {fmtGBP(trancheCost)}</div>
+                            </div>
+
+                            <button
+                              onClick={() => updateTrancheStatus(tranche.id, isFilled ? 'PENDING' : 'FILLED')}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+                                isFilled
+                                  ? 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                                  : 'bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-500'
+                              }`}
+                            >
+                              {isFilled ? '設為掛單中' : '標記已成交'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="mt-6 bg-indigo-950/40 border border-indigo-500/30 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div className="text-xs space-y-1">
+                    <div className="text-indigo-200 font-bold">子彈覆蓋率校驗 (Ammo Coverage Check)</div>
+                    <div className="text-slate-400">
+                      未成交掛單所需預留現金：<span className="text-amber-300 mono font-bold">{fmtGBP(lqq3ReservedCash)}</span> ｜
+                      帳戶自由現金：<span className="text-cyan-300 mono font-bold">{fmtGBP(freeCash)}</span>
+                    </div>
+                  </div>
+                  <div>
+                    {freeCash >= lqq3ReservedCash ? (
+                      <span className="px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold">
+                        ✅ 資金充裕 (尚餘 {fmtGBP(freeCash - lqq3ReservedCash)} 可供 Core 買入)
+                      </span>
+                    ) : (
+                      <span className="px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold">
+                        ⚠️ 自由現金不足，差額 {fmtGBP(lqq3ReservedCash - freeCash)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =========================================================
+              分頁 3: IBKR 數據匯入與跨裝置同步
+             ========================================================= */}
+          {activeTab === 'import' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+                <div>
+                  <h3 className="font-bold text-white flex items-center gap-2">
+                    <i className="fas fa-paste text-cyan-400"></i> 貼上 IBKR CSV / 剪貼簿快速更新
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    取代舊有 M365 Power Query！支援直接貼上 IBKR 匯出資料（自動清理 <code className="text-cyan-300">CSH2l</code>、<code className="text-cyan-300">VNRTl</code> 尾綴），格式：<code className="text-slate-300">代號, 股數, 均價, 最新價</code>。
+                  </p>
+                </div>
+
+                <textarea
+                  rows="7"
+                  value={importText}
+                  onChange={(e) => setImportText(e.target.value)}
+                  placeholder={`範例格式 (可直接貼上)：\nCSH2l, 4800, 4.95, 5.047\nVNRTl, 225, 126.62, 136.09\nLQQ3l, 12, 213.18, 223.38\nGBP, 1989.15`}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs mono text-slate-200 focus:border-cyan-500 focus:outline-none"
+                ></textarea>
+
+                {importMsg.text && (
+                  <div className={`p-3 rounded-xl text-xs font-medium ${
+                    importMsg.type === 'success'
+                      ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-rose-950/80 text-rose-300 border border-rose-500/40'
+                  }`}>
+                    {importMsg.text}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={handleParseCSV}
+                    className="bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs px-4 py-2.5 rounded-xl transition shadow-lg shadow-cyan-950 flex items-center gap-2"
+                  >
+                    <i className="fas fa-magic"></i> 解析並更新持倉表
+                  </button>
+                  <button
+                    onClick={() => setImportText('')}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-4 py-2.5 rounded-xl transition"
+                  >
+                    清空輸入框
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between space-y-6">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-bold text-white flex items-center gap-2">
+                      <i className="fas fa-cloud-upload-alt text-emerald-400"></i> 跨電腦 / 手機無縫同步備份
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      本網頁 App 完全無需安裝 Microsoft 365。在公司電腦更新數據後，下載 JSON 備份檔傳送至手機或家中 Mac/PC 匯入即可 100% 還原。
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+                      <div className="text-xs font-bold text-white">1. 匯出目前最新快照</div>
+                      <p className="text-[11px] text-slate-400">將目前所有持倉、自由現金、LQQ3 網格進度打包下載。</p>
+                      <button
+                        onClick={exportJSON}
+                        className="w-full mt-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium py-2 rounded-lg transition"
+                      >
+                        <i className="fas fa-file-export mr-1"></i> 下載 JSON 備份檔
+                      </button>
+                    </div>
+
+                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+                      <div className="text-xs font-bold text-white">2. 從其他裝置匯入快照</div>
+                      <p className="text-[11px] text-slate-400">選擇之前下載的 JSON 備份檔，即時同步全盤狀態。</p>
+                      <label className="w-full mt-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 text-xs font-medium py-2 rounded-lg transition flex items-center justify-center cursor-pointer">
+                        <i className="fas fa-folder-open mr-1"></i> 選擇 JSON 檔案匯入
+                        <input type="file" accept=".json" onChange={importJSON} className="hidden" />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
+                  <span className="text-xs text-slate-500">想恢復為系統預設的 11月23日 基準數據？</span>
+                  <button
+                    onClick={resetDefault}
+                    className="text-xs text-rose-400 hover:text-rose-300 underline"
+                  >
+                    重置為預設快照
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <footer className="mt-10 pt-6 border-t border-slate-800/80 text-center text-xs text-slate-500">
+            <p>IBUK 量化配置戰情室 • 專為 ISA 免稅帳戶設計 • 數據儲存於本地瀏覽器 LocalStorage</p>
+          </footer>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<PortfolioDashboard />);
+  </script>
+</body>
+</html>
