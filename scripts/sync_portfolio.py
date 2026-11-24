@@ -64,20 +64,20 @@ def fetch_ibkr_flex_positions():
     )
 
     ref_code = None
-    for _ in range(4):
-        xml_txt = http_get_text(send_url)
+    for _ in range(6):
+        xml_txt = http_get_text(send_url, retries=4, delay=4)
         root = ET.fromstring(xml_txt)
         ref_elem = root.find(".//ReferenceCode")
         if ref_elem is not None and ref_elem.text:
             ref_code = ref_elem.text.strip()
             break
-        time.sleep(3)
+        time.sleep(4)
 
     if not ref_code:
         print("❌ IBKR Flex SendRequest 未能取得 ReferenceCode")
         return {}, None
 
-    time.sleep(3)
+    time.sleep(4)
     get_url = (
         f"https://gdcdyn.interactivebrokers.com/Universal/servlet/"
         f"FlexStatementService.GetStatement?q={urllib.parse.quote(ref_code)}"
@@ -85,12 +85,12 @@ def fetch_ibkr_flex_positions():
     )
 
     csv_txt = ""
-    for _ in range(4):
-        txt = http_get_text(get_url)
+    for _ in range(8):
+        txt = http_get_text(get_url, retries=4, delay=4)
         if "Symbol" in txt or "Quantity" in txt or "EndingCash" in txt:
             csv_txt = txt
             break
-        time.sleep(3)
+        time.sleep(4)
 
     if not csv_txt:
         print("❌ IBKR Flex GetStatement 逾時或無效回應")
@@ -267,9 +267,28 @@ def fetch_yahoo_lse_series(symbol):
     return closes
 
 def main():
+    # 先讀取上一份 data.json 作為防洗白後備（避免 IBKR 伺服器偶發逾時覆蓋成空值）
+    prev_data = {}
+    if os.path.exists("data.json"):
+        try:
+            with open("data.json", "r", encoding="utf-8") as f:
+                prev_data = json.load(f)
+        except Exception as e:
+            print(f"⚠️ 讀取舊 data.json 失敗: {e}")
+
     ibkr_pos, ibkr_cash = fetch_ibkr_flex_positions()
 
-    gbp_usd = 1.318
+    ibkr_sync_status = "LIVE"
+    if not ibkr_pos and prev_data.get("ibkrPositions"):
+        ibkr_pos = prev_data["ibkrPositions"]
+        ibkr_sync_status = "CACHED_FALLBACK"
+        print("🛡️ IBKR 持倉本次未有回傳，已自動保留上一次成功同步之持倉數據。")
+
+    if ibkr_cash is None and prev_data.get("freeCash") is not None:
+        ibkr_cash = prev_data["freeCash"]
+        print(f"🛡️ IBKR 現金本次未有回傳，已自動保留上一次自由現金: {ibkr_cash}")
+
+    gbp_usd = prev_data.get("gbpUsdRate", 1.318)
     try:
         fx_closes = fetch_yahoo_lse_series("GBPUSD=X")
         if fx_closes:
@@ -277,7 +296,7 @@ def main():
     except Exception as e:
         print(f"⚠️ GBP/USD 匯率抓取失敗，沿用預設值: {e}")
 
-    market_data = {}
+    market_data = dict(prev_data.get("marketData", {}))
     for asset in LSE_ASSETS:
         t = asset["ticker"]
         try:
@@ -285,24 +304,31 @@ def main():
             ind = compute_wilder_indicators(closes)
             if ind:
                 price_gbp = ind["latestRaw"]
+                ma4_gbp = ind["ma4"]
+                ma30_gbp = ind["ma30"]
                 if asset["is_pence"]:
                     price_gbp /= 100.0
+                    ma4_gbp /= 100.0
+                    ma30_gbp /= 100.0
                 if asset["is_usd"]:
                     price_gbp /= gbp_usd
+                    ma4_gbp /= gbp_usd
+                    ma30_gbp /= gbp_usd
 
                 market_data[t] = {
                     "priceGbp": round(price_gbp, 4),
                     "rsi2": ind["rsi2"],
                     "rsi14": ind["rsi14"],
-                    "ma4": ind["ma4"],
-                    "ma30": ind["ma30"],
+                    "ma4": round(ma4_gbp, 2),
+                    "ma30": round(ma30_gbp, 2),
                 }
-                print(f"✅ {asset['yahoo']}: £{price_gbp:.4f} | RSI(2)={ind['rsi2']}")
+                print(f"✅ {asset['yahoo']}: £{price_gbp:.4f} | RSI(2)={ind['rsi2']} | MA4=£{ma4_gbp:.2f}")
         except Exception as e:
-            print(f"❌ {asset['yahoo']} 抓取失敗: {e}")
+            print(f"❌ {asset['yahoo']} 抓取失敗（保留舊值）: {e}")
 
     output = {
         "updatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "ibkrSyncStatus": ibkr_sync_status,
         "gbpUsdRate": gbp_usd,
         "freeCash": ibkr_cash,
         "ibkrPositions": ibkr_pos,
