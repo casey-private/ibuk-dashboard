@@ -1,9 +1,9 @@
 {
-  "updatedAt": "2026-11-24 22:27 UTC",
+  "updatedAt": "2026-11-24 22:34 UTC",
   "ibkrSyncStatus": "LIVE",
   "ibkrError": null,
-  "gbpUsdRate": 1.311,
-  "freeCash": null,
+  "gbpUsdRate": 1.3115,
+  "freeCash": 3228.86,
   "ibkrPositions": {
     "CSH2": {
       "position": 4717.0,
