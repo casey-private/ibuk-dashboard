@@ -376,6 +376,40 @@
       throw lastErr || new Error(`無法獲取 ${symbol} 報價`);
     }
 
+    // --- 手動修改追蹤工具 (獨立儲存於 IBUK_MANUAL_OVERRIDES_V1) ---
+    function formatLocalTimestamp(date = new Date()) {
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
+
+    function hasActiveOverrides(ov) {
+      if (!ov || typeof ov !== 'object') return false;
+      const hasPos = ov.positions && Object.keys(ov.positions).length > 0;
+      const hasPrices = ov.prices && Object.keys(ov.prices).length > 0;
+      const hasAvg = ov.avgPrices && Object.keys(ov.avgPrices).length > 0;
+      const hasCost = ov.costBases && Object.keys(ov.costBases).length > 0;
+      const hasCash = ov.freeCash !== undefined && ov.freeCash !== null;
+      return Boolean(hasPos || hasPrices || hasAvg || hasCost || hasCash);
+    }
+
+    function summarizeOverrides(ov) {
+      if (!hasActiveOverrides(ov)) return [];
+      const items = [];
+      if (ov.positions) {
+        Object.entries(ov.positions).forEach(([t, v]) => items.push(`${t} 股數: ${fmtNum(v, 0)}`));
+      }
+      if (ov.prices) {
+        Object.entries(ov.prices).forEach(([t, v]) => items.push(`${t} 現價: £${fmtNum(v, v < 10 ? 4 : 2)}`));
+      }
+      if (ov.avgPrices) {
+        Object.entries(ov.avgPrices).forEach(([t, v]) => items.push(`${t} 均價: £${fmtNum(v, 2)}`));
+      }
+      if (ov.freeCash !== undefined && ov.freeCash !== null) {
+        items.push(`自由現金: ${fmtGBP(ov.freeCash)}`);
+      }
+      return items;
+    }
+
     // --- 主 React 元件 ---
     function PortfolioDashboard() {
       const [holdings, setHoldings] = useState(() => {
@@ -406,8 +440,26 @@
         }
       });
 
+      const [rebalanceThreshold, setRebalanceThreshold] = useState(() => {
+        const saved = localStorage.getItem('IBUK_REBALANCE_THRESHOLD_V2');
+        const parsed = saved !== null ? Number(saved) : 300;
+        return !isNaN(parsed) && parsed >= 0 ? parsed : 300;
+      });
+
+      const [manualOverrides, setManualOverrides] = useState(() => {
+        try {
+          const saved = localStorage.getItem('IBUK_MANUAL_OVERRIDES_V1');
+          const parsed = saved ? JSON.parse(saved) : null;
+          return hasActiveOverrides(parsed) ? parsed : null;
+        } catch {
+          return null;
+        }
+      });
+
+      const [latestCloudData, setLatestCloudData] = useState(null);
+      const [pendingCloudOverwrite, setPendingCloudOverwrite] = useState(null);
+
       const [activeTab, setActiveTab] = useState('summary'); // 'summary' | 'lqq3' | 'import' | 'settings'
-      const [rebalanceThreshold, setRebalanceThreshold] = useState(300);
       const [importText, setImportText] = useState('');
       const [importMsg, setImportMsg] = useState({ type: '', text: '' });
       const [lastUpdated, setLastUpdated] = useState(new Date().toLocaleTimeString('zh-HK'));
@@ -420,6 +472,96 @@
         gbpUsdRate: 1.318
       });
 
+      // 套用雲端 data.json（可選擇性保留手動覆寫欄位）
+      const applyCloudData = (cloud, keepOverrides = null) => {
+        if (!cloud || !cloud.marketData) return;
+        const hasCloudPositions = cloud.ibkrPositions && Object.keys(cloud.ibkrPositions).length > 0;
+        const zeroCostTickers = [];
+        const ov = hasActiveOverrides(keepOverrides) ? keepOverrides : null;
+
+        setHoldings(prev => prev.map(h => {
+          const m = cloud.marketData[h.ticker];
+          const p = hasCloudPositions ? cloud.ibkrPositions[h.ticker] : null;
+          if (p && p.position > 0 && (!p.avgPrice || p.avgPrice <= 0)) {
+            zeroCostTickers.push(h.ticker);
+          }
+
+          let nextPosition = (p && p.position !== undefined) ? p.position : h.position;
+          let nextAvgPrice = (p && p.avgPrice > 0) ? p.avgPrice : h.avgPrice;
+          let nextCostBasis = (p && p.costBasis > 0) ? p.costBasis : h.costBasis;
+          let nextPrice = (m && m.priceGbp) ? m.priceGbp : h.price;
+
+          if (ov) {
+            if (ov.positions && ov.positions[h.ticker] !== undefined) {
+              nextPosition = ov.positions[h.ticker];
+              if (!ov.costBases || ov.costBases[h.ticker] === undefined) {
+                nextCostBasis = nextPosition * nextAvgPrice;
+              }
+            }
+            if (ov.avgPrices && ov.avgPrices[h.ticker] !== undefined) {
+              nextAvgPrice = ov.avgPrices[h.ticker];
+            }
+            if (ov.costBases && ov.costBases[h.ticker] !== undefined) {
+              nextCostBasis = ov.costBases[h.ticker];
+            }
+            if (ov.prices && ov.prices[h.ticker] !== undefined) {
+              nextPrice = ov.prices[h.ticker];
+            }
+          }
+
+          return {
+            ...h,
+            position: nextPosition,
+            avgPrice: nextAvgPrice,
+            costBasis: nextCostBasis,
+            price: nextPrice,
+            rsi2: (m && m.rsi2 !== undefined) ? m.rsi2 : h.rsi2,
+            rsi14: (m && m.rsi14 !== undefined) ? m.rsi14 : h.rsi14,
+            ma4: (m && m.ma4 !== undefined) ? m.ma4 : h.ma4,
+            ma30: (m && m.ma30 !== undefined) ? m.ma30 : h.ma30
+          };
+        }));
+
+        if (ov && ov.freeCash !== undefined && ov.freeCash !== null) {
+          setFreeCash(ov.freeCash);
+        } else if (cloud.freeCash !== null && cloud.freeCash !== undefined) {
+          setFreeCash(cloud.freeCash);
+        }
+
+        if (cloud.updatedAt) {
+          setLastUpdated(cloud.updatedAt);
+        }
+
+        // 整理防洗白 / 成本價沿用提示
+        const notices = [];
+        if (cloud.ibkrSyncStatus === 'CACHED_FALLBACK' || cloud.ibkrError) {
+          const oldPosTime = cloud.ibkrPositionsUpdatedAt || '上一次成功同步';
+          notices.push(
+            `IBKR 持倉／現金本次同步未成功（${cloud.ibkrError || '伺服器逾時'}），目前持倉沿用 ${oldPosTime} 之舊快照頂替。`
+          );
+        }
+        if (cloud.costBasisFallback && Array.isArray(cloud.costBasisFallback.tickers) && cloud.costBasisFallback.tickers.length > 0) {
+          const fromTime = cloud.costBasisFallback.fromUpdatedAt || cloud.costBasisUpdatedAt || '上一次有效快照';
+          notices.push(
+            `最新股數、現金與 LSE 股價已於 ${cloud.updatedAt} 更新；但 IBKR Flex 回傳成本價為 0，以下標的之平均成本暫沿用 ${fromTime} 舊數據頂替：${cloud.costBasisFallback.tickers.join(', ')}`
+          );
+        } else if (zeroCostTickers.length > 0) {
+          notices.push(
+            `最新數據已於 ${cloud.updatedAt} 更新，但 IBKR 回傳以下標的成本價為 0，已保留瀏覽器原有成本價：${zeroCostTickers.join(', ')}`
+          );
+        }
+        setFallbackNotes(notices);
+
+        const ibkrNote = cloud.ibkrError
+          ? `Yahoo LSE 股價與 RSI/MA 已更新 (${cloud.updatedAt})，但 IBKR 持倉暫用舊快照`
+          : `已自動載入雲端最新快照 (${cloud.updatedAt}) • IBUK 持倉 + Yahoo Finance 倫敦 LSE 股價及 Wilder RSI/MA`;
+        setApiStatus({
+          type: 'success',
+          message: ibkrNote,
+          gbpUsdRate: cloud.gbpUsdRate || 1.318
+        });
+      };
+
       // --- 啟動時自動讀取 GitHub Actions 生成的 data.json ---
       useEffect(() => {
         fetch('./data.json?t=' + Date.now(), { cache: 'no-store' })
@@ -429,62 +571,26 @@
           })
           .then(cloud => {
             if (!cloud || !cloud.marketData) return;
-            const hasCloudPositions = cloud.ibkrPositions && Object.keys(cloud.ibkrPositions).length > 0;
-            const zeroCostTickers = [];
+            setLatestCloudData(cloud);
 
-            setHoldings(prev => prev.map(h => {
-              const m = cloud.marketData[h.ticker];
-              const p = hasCloudPositions ? cloud.ibkrPositions[h.ticker] : null;
-              if (p && p.position > 0 && (!p.avgPrice || p.avgPrice <= 0)) {
-                zeroCostTickers.push(h.ticker);
+            let savedOverrides = null;
+            try {
+              const raw = localStorage.getItem('IBUK_MANUAL_OVERRIDES_V1');
+              savedOverrides = raw ? JSON.parse(raw) : null;
+            } catch {
+              savedOverrides = null;
+            }
+
+            if (hasActiveOverrides(savedOverrides)) {
+              const isNewerCloud = Boolean(cloud.updatedAt && cloud.updatedAt !== savedOverrides.baseCloudUpdatedAt);
+              // 先安全保留用戶手動更改（其餘未改動的 RSI/MA 與標的照常更新）
+              applyCloudData(cloud, savedOverrides);
+              if (isNewerCloud) {
+                setPendingCloudOverwrite(cloud);
               }
-              return {
-                ...h,
-                position: (p && p.position !== undefined) ? p.position : h.position,
-                avgPrice: (p && p.avgPrice > 0) ? p.avgPrice : h.avgPrice,
-                costBasis: (p && p.costBasis > 0) ? p.costBasis : h.costBasis,
-                price: (m && m.priceGbp) ? m.priceGbp : h.price,
-                rsi2: (m && m.rsi2 !== undefined) ? m.rsi2 : h.rsi2,
-                rsi14: (m && m.rsi14 !== undefined) ? m.rsi14 : h.rsi14,
-                ma4: (m && m.ma4 !== undefined) ? m.ma4 : h.ma4,
-                ma30: (m && m.ma30 !== undefined) ? m.ma30 : h.ma30
-              };
-            }));
-            if (cloud.freeCash !== null && cloud.freeCash !== undefined) {
-              setFreeCash(cloud.freeCash);
+            } else {
+              applyCloudData(cloud, null);
             }
-            if (cloud.updatedAt) {
-              setLastUpdated(cloud.updatedAt);
-            }
-
-            // 整理防洗白 / 成本價沿用提示
-            const notices = [];
-            if (cloud.ibkrSyncStatus === 'CACHED_FALLBACK' || cloud.ibkrError) {
-              const oldPosTime = cloud.ibkrPositionsUpdatedAt || '上一次成功同步';
-              notices.push(
-                `IBKR 持倉／現金本次同步未成功（${cloud.ibkrError || '伺服器逾時'}），目前持倉沿用 ${oldPosTime} 之舊快照頂替。`
-              );
-            }
-            if (cloud.costBasisFallback && Array.isArray(cloud.costBasisFallback.tickers) && cloud.costBasisFallback.tickers.length > 0) {
-              const fromTime = cloud.costBasisFallback.fromUpdatedAt || cloud.costBasisUpdatedAt || '上一次有效快照';
-              notices.push(
-                `最新股數、現金與 LSE 股價已於 ${cloud.updatedAt} 更新；但 IBKR Flex 回傳成本價為 0，以下標的之平均成本暫沿用 ${fromTime} 舊數據頂替：${cloud.costBasisFallback.tickers.join(', ')}`
-              );
-            } else if (zeroCostTickers.length > 0) {
-              notices.push(
-                `最新數據已於 ${cloud.updatedAt} 更新，但 IBKR 回傳以下標的成本價為 0，已保留瀏覽器原有成本價：${zeroCostTickers.join(', ')}`
-              );
-            }
-            setFallbackNotes(notices);
-
-            const ibkrNote = cloud.ibkrError
-              ? `Yahoo LSE 股價與 RSI/MA 已更新 (${cloud.updatedAt})，但 IBKR 持倉暫用舊快照`
-              : `已自動載入雲端最新快照 (${cloud.updatedAt}) • IBUK 持倉 + Yahoo Finance 倫敦 LSE 股價及 Wilder RSI/MA`;
-            setApiStatus({
-              type: 'success',
-              message: ibkrNote,
-              gbpUsdRate: cloud.gbpUsdRate || 1.318
-            });
           })
           .catch(() => {
             // 若在本地單獨開啟尚未連接 GitHub data.json，則靜默沿用本地儲存數據
@@ -502,6 +608,18 @@
       useEffect(() => {
         localStorage.setItem('IBUK_LQQ3_CONFIG_V2', JSON.stringify(lqq3Config));
       }, [lqq3Config]);
+
+      useEffect(() => {
+        localStorage.setItem('IBUK_REBALANCE_THRESHOLD_V2', String(rebalanceThreshold));
+      }, [rebalanceThreshold]);
+
+      useEffect(() => {
+        if (hasActiveOverrides(manualOverrides)) {
+          localStorage.setItem('IBUK_MANUAL_OVERRIDES_V1', JSON.stringify(manualOverrides));
+        } else {
+          localStorage.removeItem('IBUK_MANUAL_OVERRIDES_V1');
+        }
+      }, [manualOverrides]);
 
       // 1. 各持倉市值與盈虧
       const calculatedHoldings = useMemo(() => {
@@ -657,6 +775,9 @@
       const handleCellEdit = (ticker, field, rawVal) => {
         const val = parseFloat(rawVal);
         if (isNaN(val) || val < 0) return;
+        const currentItem = holdings.find(h => h.ticker === ticker);
+        if (currentItem && Number(currentItem[field]) === val) return;
+
         setHoldings(prev => prev.map(h => {
           if (h.ticker !== ticker) return h;
           const updated = { ...h, [field]: val };
@@ -665,7 +786,66 @@
           }
           return updated;
         }));
-        setLastUpdated(new Date().toLocaleTimeString('zh-HK'));
+
+        const now = new Date();
+        const ts = formatLocalTimestamp(now);
+        setManualOverrides(prev => {
+          const base = prev ? { ...prev } : { positions: {}, prices: {}, avgPrices: {}, costBases: {} };
+          const key = field === 'position' ? 'positions' : field === 'price' ? 'prices' : null;
+          if (key) {
+            base[key] = { ...(base[key] || {}), [ticker]: val };
+          }
+          base.updatedAt = ts;
+          base.updatedAtIso = now.toISOString();
+          base.baseCloudUpdatedAt = latestCloudData?.updatedAt || base.baseCloudUpdatedAt || null;
+          return base;
+        });
+        setLastUpdated(`手動 ${ts.slice(11, 16)}`);
+      };
+
+      const handleFreeCashChange = (rawVal) => {
+        const parsed = parseFloat(rawVal);
+        const val = isNaN(parsed) || parsed < 0 ? 0 : parsed;
+        setFreeCash(val);
+        const now = new Date();
+        const ts = formatLocalTimestamp(now);
+        setManualOverrides(prev => ({
+          ...(prev || { positions: {}, prices: {}, avgPrices: {}, costBases: {} }),
+          freeCash: val,
+          updatedAt: ts,
+          updatedAtIso: now.toISOString(),
+          baseCloudUpdatedAt: latestCloudData?.updatedAt || prev?.baseCloudUpdatedAt || null
+        }));
+      };
+
+      // 答「是」：覆寫手動更改為最新下載的 data.json
+      const handleAcceptCloudOverwrite = () => {
+        const cloud = pendingCloudOverwrite || latestCloudData;
+        setManualOverrides(null);
+        setPendingCloudOverwrite(null);
+        if (cloud) {
+          applyCloudData(cloud, null);
+        }
+      };
+
+      // 答「否」：保留手動更改，並把基準版本對齊到本次 data.json（直到下一次 data.json 再更新才再詢問）
+      const handleKeepManualOverrides = () => {
+        if (pendingCloudOverwrite) {
+          setManualOverrides(prev => prev ? {
+            ...prev,
+            baseCloudUpdatedAt: pendingCloudOverwrite.updatedAt || prev.baseCloudUpdatedAt
+          } : prev);
+        }
+        setPendingCloudOverwrite(null);
+      };
+
+      // 主動放棄手動修改，還原雲端 data.json
+      const handleDiscardManualOverrides = () => {
+        setManualOverrides(null);
+        setPendingCloudOverwrite(null);
+        if (latestCloudData) {
+          applyCloudData(latestCloudData, null);
+        }
       };
 
       // Yahoo Finance LSE (.L) 抓數並重算全組合 Wilder RSI(2), RSI(14), MA4, MA30
@@ -744,6 +924,14 @@
             };
           }));
 
+          setManualOverrides(prev => {
+            if (!prev || !prev.prices) return prev;
+            const nextPrices = { ...prev.prices };
+            Object.keys(resultsMap).forEach(t => { delete nextPrices[t]; });
+            const next = { ...prev, prices: nextPrices };
+            return hasActiveOverrides(next) ? next : null;
+          });
+
           const nowStr = new Date().toLocaleTimeString('zh-HK');
           setLastUpdated(nowStr);
           setApiStatus({
@@ -771,8 +959,12 @@
         try {
           const lines = importText.trim().split('\n');
           let updatedCount = 0;
-          const newHoldings = [...holdings];
+          const newHoldings = holdings.map(h => ({ ...h }));
           let detectedCash = null;
+          const csvPosOv = {};
+          const csvPriceOv = {};
+          const csvAvgOv = {};
+          const csvCostOv = {};
 
           lines.forEach(line => {
             const cols = line.split(/[,\t;]/).map(c => c.replace(/^"|"$/g, '').trim());
@@ -792,6 +984,7 @@
 
                   if (!isNaN(pos)) {
                     newHoldings[targetIdx].position = pos;
+                    csvPosOv[cleanSymbol] = pos;
                     if (!isNaN(costOrAvg) && costOrAvg > 0) {
                       if (pos > 0 && costOrAvg > pos * 2) {
                         newHoldings[targetIdx].costBasis = costOrAvg;
@@ -800,9 +993,12 @@
                         newHoldings[targetIdx].avgPrice = costOrAvg;
                         newHoldings[targetIdx].costBasis = pos * costOrAvg;
                       }
+                      csvAvgOv[cleanSymbol] = newHoldings[targetIdx].avgPrice;
+                      csvCostOv[cleanSymbol] = newHoldings[targetIdx].costBasis;
                     }
                     if (!isNaN(mktPrice) && mktPrice > 0) {
                       newHoldings[targetIdx].price = mktPrice;
+                      csvPriceOv[cleanSymbol] = mktPrice;
                     }
                     updatedCount++;
                   }
@@ -812,12 +1008,25 @@
           });
 
           if (updatedCount > 0 || detectedCash !== null) {
+            const now = new Date();
+            const ts = formatLocalTimestamp(now);
             setHoldings(newHoldings);
             if (detectedCash !== null) setFreeCash(detectedCash);
-            setLastUpdated(new Date().toLocaleTimeString('zh-HK'));
+            setManualOverrides(prev => ({
+              ...(prev || { positions: {}, prices: {}, avgPrices: {}, costBases: {} }),
+              positions: { ...(prev?.positions || {}), ...csvPosOv },
+              prices: { ...(prev?.prices || {}), ...csvPriceOv },
+              avgPrices: { ...(prev?.avgPrices || {}), ...csvAvgOv },
+              costBases: { ...(prev?.costBases || {}), ...csvCostOv },
+              ...(detectedCash !== null ? { freeCash: detectedCash } : {}),
+              updatedAt: ts,
+              updatedAtIso: now.toISOString(),
+              baseCloudUpdatedAt: latestCloudData?.updatedAt || prev?.baseCloudUpdatedAt || null
+            }));
+            setLastUpdated(`手動 ${ts.slice(11, 16)}`);
             setImportMsg({
               type: 'success',
-              text: `成功解析！已更新 ${updatedCount} 項持倉紀錄${detectedCash !== null ? `，並同步現金餘額為 ${fmtGBP(detectedCash)}` : ''}。`
+              text: `成功解析！已更新 ${updatedCount} 項持倉紀錄${detectedCash !== null ? `，並同步現金餘額為 ${fmtGBP(detectedCash)}` : ''}（已記錄手動時間戳）。`
             });
             setTimeout(() => setActiveTab('summary'), 1200);
           } else {
@@ -832,8 +1041,10 @@
         const payload = {
           exportDate: new Date().toISOString(),
           freeCash,
+          rebalanceThreshold,
           holdings,
-          lqq3Config
+          lqq3Config,
+          manualOverrides
         };
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(payload, null, 2));
         const downloadAnchor = document.createElement('a');
@@ -853,7 +1064,11 @@
             const parsed = JSON.parse(event.target.result);
             if (parsed.holdings) setHoldings(parsed.holdings);
             if (parsed.freeCash !== undefined) setFreeCash(parsed.freeCash);
+            if (parsed.rebalanceThreshold !== undefined) setRebalanceThreshold(Number(parsed.rebalanceThreshold) || 300);
             if (parsed.lqq3Config) setLqq3Config(parsed.lqq3Config);
+            if (parsed.manualOverrides !== undefined) {
+              setManualOverrides(hasActiveOverrides(parsed.manualOverrides) ? parsed.manualOverrides : null);
+            }
             setImportMsg({ type: 'success', text: 'JSON 備份檔恢復成功！所有數據已跨裝置同步。' });
             setLastUpdated(new Date().toLocaleTimeString('zh-HK'));
           } catch (err) {
@@ -866,8 +1081,11 @@
       const resetDefault = () => {
         setHoldings(INITIAL_HOLDINGS);
         setFreeCash(1767.88);
+        setRebalanceThreshold(300);
         setLqq3Config(INITIAL_LQQ3_PARAMS);
-        setImportMsg({ type: 'success', text: '已重置為 11月24日最新校正基準數據！' });
+        setManualOverrides(null);
+        setPendingCloudOverwrite(null);
+        setImportMsg({ type: 'success', text: '已重置為預設基準數據並清除手動修改紀錄！' });
       };
 
       const updateTrancheStatus = (id, newStatus) => {
@@ -962,6 +1180,66 @@
             </div>
           )}
 
+          {/* 新版 data.json 覆寫手動更改確認提示 */}
+          {pendingCloudOverwrite && hasActiveOverrides(manualOverrides) && (
+            <div className="mt-3 p-4 rounded-xl border-2 border-cyan-500/70 bg-cyan-950/60 text-slate-100 shadow-xl space-y-3">
+              <div className="flex items-start gap-2.5">
+                <i className="fas fa-cloud-download-alt text-cyan-400 text-base mt-0.5 shrink-0"></i>
+                <div className="space-y-1 text-xs">
+                  <div className="font-bold text-sm text-cyan-200">
+                    已下載最新雲端資料 ({pendingCloudOverwrite.updatedAt})，是否覆寫你的手動更改？
+                  </div>
+                  <p className="text-slate-300">
+                    你於 <span className="mono font-semibold text-amber-300">{manualOverrides.updatedAt}</span> 手動修改過以下資料
+                    {manualOverrides.baseCloudUpdatedAt ? `（當時雲端基準：${manualOverrides.baseCloudUpdatedAt}）` : ''}：
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {summarizeOverrides(manualOverrides).map((item, idx) => (
+                      <span key={idx} className="px-2 py-0.5 rounded bg-slate-900/90 border border-cyan-500/40 text-amber-200 mono whitespace-nowrap">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  onClick={handleAcceptCloudOverwrite}
+                  className="px-3.5 py-2 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50 transition whitespace-nowrap"
+                >
+                  <i className="fas fa-check mr-1.5"></i>是，覆寫為最新 data.json
+                </button>
+                <button
+                  onClick={handleKeepManualOverrides}
+                  className="px-3.5 py-2 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 transition whitespace-nowrap"
+                >
+                  <i className="fas fa-lock mr-1.5"></i>否，保留我的手動更改
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 手動修改生效中狀態條 */}
+          {!pendingCloudOverwrite && hasActiveOverrides(manualOverrides) && (
+            <div className="mt-3 px-4 py-2.5 rounded-xl border border-indigo-500/40 bg-indigo-950/40 text-indigo-200 text-xs flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <i className="fas fa-edit text-indigo-400"></i>
+                <span>
+                  已儲存本地手動修改（<span className="mono text-indigo-100">{manualOverrides.updatedAt}</span>）：
+                  <span className="mono text-amber-200 ml-1">{summarizeOverrides(manualOverrides).join(' ｜ ')}</span>
+                </span>
+              </div>
+              {latestCloudData && (
+                <button
+                  onClick={handleDiscardManualOverrides}
+                  className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-indigo-200 border border-indigo-500/40 text-xs font-medium transition whitespace-nowrap"
+                >
+                  還原雲端 data.json ({latestCloudData.updatedAt})
+                </button>
+              )}
+            </div>
+          )}
+
           {/* 4 張核心 KPI 監控卡片 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 my-6">
             {/* KPI 1: Total NAV */}
@@ -1024,9 +1302,9 @@
                     type="number"
                     step="0.01"
                     value={freeCash}
-                    onChange={(e) => setFreeCash(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => handleFreeCashChange(e.target.value)}
                     className="w-24 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-right mono text-cyan-300 font-semibold focus:border-cyan-500 focus:outline-none"
-                    title="直接點擊可修改 IBUK 自由現金餘額"
+                    title="直接點擊可修改 IBUK 自由現金餘額（自動記錄手動時間戳）"
                   />
                 </div>
               </div>
