@@ -238,10 +238,18 @@ def _extract_position(row_dict, positions):
     avg_price = parse_float(row_dict.get("CostBasisPrice"))
     cost_basis = parse_float(row_dict.get("CostBasisMoney"))
 
-    if cost_basis is None and avg_price is not None:
+    if (cost_basis is None or cost_basis <= 0) and avg_price is not None and avg_price > 0:
         cost_basis = qty * avg_price
-    elif avg_price is None and cost_basis is not None and qty > 0:
+    elif (avg_price is None or avg_price <= 0) and cost_basis is not None and cost_basis > 0 and qty > 0:
         avg_price = cost_basis / qty
+
+    existing = positions.get(clean_sym)
+    # 防止同一標的於 CSV 中出現多列（如 lot/summary）時，零成本列覆蓋已解析之有效成本
+    if existing and existing.get("position") == qty:
+        if (avg_price is None or avg_price <= 0) and (existing.get("avgPrice") or 0) > 0:
+            avg_price = existing["avgPrice"]
+        if (cost_basis is None or cost_basis <= 0) and (existing.get("costBasis") or 0) > 0:
+            cost_basis = existing["costBasis"]
 
     positions[clean_sym] = {
         "position": qty,
@@ -321,7 +329,9 @@ def fetch_yahoo_lse_series(symbol):
     return closes
 
 def main():
-    # 先讀取上一份 data.json 作為防洗白後備（避免 IBKR 伺服器偶發逾時覆蓋成空值）
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    # 先讀取上一份 data.json 作為防洗白後備（避免 IBKR 伺服器偶發逾時或回傳 0 覆蓋成空值）
     prev_data = {}
     if os.path.exists("data.json"):
         try:
@@ -333,14 +343,71 @@ def main():
     ibkr_pos, ibkr_cash, ibkr_err = fetch_ibkr_flex_positions()
 
     ibkr_sync_status = "LIVE" if not ibkr_err else "CACHED_FALLBACK"
+    used_cached_positions = False
     if not ibkr_pos and prev_data.get("ibkrPositions"):
         ibkr_pos = prev_data["ibkrPositions"]
         ibkr_sync_status = "CACHED_FALLBACK"
+        used_cached_positions = True
         print("🛡️ IBKR 持倉本次未有回傳，已自動保留上一次成功同步之持倉數據。")
 
     if ibkr_cash is None and prev_data.get("freeCash") is not None:
         ibkr_cash = prev_data["freeCash"]
         print(f"🛡️ IBKR 現金本次未有回傳，已自動保留上一次自由現金: {ibkr_cash}")
+
+    prev_positions = prev_data.get("ibkrPositions") or {}
+    ibkr_positions_updated_at = (
+        prev_data.get("ibkrPositionsUpdatedAt") or prev_data.get("updatedAt")
+        if used_cached_positions
+        else now_utc
+    )
+
+    # 成本價防歸零保護：當 IBKR 回傳 avgPrice/costBasis <= 0 時，沿用上一次有效非零成本並記錄舊快照時間
+    cost_basis_fallback_tickers = []
+    has_live_cost_basis = False
+    if not used_cached_positions and ibkr_pos:
+        for sym, pos_obj in ibkr_pos.items():
+            qty = pos_obj.get("position") or 0
+            if qty <= 0:
+                continue
+            avg_p = pos_obj.get("avgPrice")
+            cost_b = pos_obj.get("costBasis")
+            missing_avg = avg_p is None or avg_p <= 0
+            missing_cost = cost_b is None or cost_b <= 0
+            if missing_avg or missing_cost:
+                prev_p = prev_positions.get(sym) or {}
+                prev_avg = prev_p.get("avgPrice")
+                prev_cost = prev_p.get("costBasis")
+                if prev_avg is not None and prev_avg > 0:
+                    pos_obj["avgPrice"] = prev_avg
+                    if prev_cost is not None and prev_cost > 0 and prev_p.get("position") == qty:
+                        pos_obj["costBasis"] = prev_cost
+                    else:
+                        pos_obj["costBasis"] = round(qty * prev_avg, 2)
+                cost_basis_fallback_tickers.append(sym)
+            else:
+                has_live_cost_basis = True
+
+    if used_cached_positions:
+        cost_basis_updated_at = prev_data.get("costBasisUpdatedAt") or prev_data.get("updatedAt")
+        cost_basis_fallback = prev_data.get("costBasisFallback")
+    elif cost_basis_fallback_tickers:
+        fallback_from = prev_data.get("costBasisUpdatedAt") or prev_data.get("updatedAt") or "上一次有效快照"
+        cost_basis_updated_at = fallback_from
+        cost_basis_fallback = {
+            "tickers": cost_basis_fallback_tickers,
+            "fromUpdatedAt": fallback_from,
+            "reason": "IBKR Flex 回傳成本價為 0，已沿用上一次有效成本價頂替",
+        }
+        print(
+            f"🛡️ 成本價防歸零保護：IBKR 回傳 0，以下標的沿用 {fallback_from} 之舊成本價 -> "
+            f"{', '.join(cost_basis_fallback_tickers)}"
+        )
+    elif has_live_cost_basis:
+        cost_basis_updated_at = now_utc
+        cost_basis_fallback = None
+    else:
+        cost_basis_updated_at = prev_data.get("costBasisUpdatedAt") or prev_data.get("updatedAt")
+        cost_basis_fallback = prev_data.get("costBasisFallback")
 
     gbp_usd = prev_data.get("gbpUsdRate", 1.318)
     try:
@@ -381,9 +448,12 @@ def main():
             print(f"❌ {asset['yahoo']} 抓取失敗（保留舊值）: {e}")
 
     output = {
-        "updatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "updatedAt": now_utc,
         "ibkrSyncStatus": ibkr_sync_status,
         "ibkrError": ibkr_err,
+        "ibkrPositionsUpdatedAt": ibkr_positions_updated_at,
+        "costBasisUpdatedAt": cost_basis_updated_at,
+        "costBasisFallback": cost_basis_fallback,
         "gbpUsdRate": gbp_usd,
         "freeCash": ibkr_cash,
         "ibkrPositions": ibkr_pos,

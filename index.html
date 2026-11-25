@@ -233,19 +233,19 @@
       ]
     };
 
-    // --- 倫敦交易所 ETF 代號與 Twelve Data 免費版美股標尺映射表 ---
+    // --- 倫敦交易所 (LSE) ETF Yahoo Finance 代號與幣別設定 ---
     // (IGLN.L 與 CRUD.L 於 LSE 直接以 GBP 報價，無需換算 USD；GBp 標的一律除以 100)
     const LSE_TICKER_META = {
-      CSH2: { yahoo: 'CSH2.L', tdProxy: null, isPence: true, isUsd: false },
-      VNRT: { yahoo: 'VNRT.L', tdProxy: 'VOO', isPence: false, isUsd: false },
-      MIDD: { yahoo: 'MIDD.L', tdProxy: 'EWU', isPence: true, isUsd: false },
-      VERX: { yahoo: 'VERX.L', tdProxy: 'VGK', isPence: false, isUsd: false },
-      SJPA: { yahoo: 'SJPA.L', tdProxy: 'EWJ', isPence: true, isUsd: false },
-      SAUS: { yahoo: 'SAUS.L', tdProxy: 'EWA', isPence: true, isUsd: false },
-      EXCS: { yahoo: 'EXCS.L', tdProxy: 'EMXC', isPence: false, isUsd: false },
-      IGLN: { yahoo: 'IGLN.L', tdProxy: 'GLD', isPence: false, isUsd: false },
-      LQQ3: { yahoo: 'LQQ3.L', tdProxy: 'TQQQ', isPence: true, isUsd: false },
-      CRUD: { yahoo: 'CRUD.L', tdProxy: null, isPence: false, isUsd: false }
+      CSH2: { yahoo: 'CSH2.L', isPence: true, isUsd: false },
+      VNRT: { yahoo: 'VNRT.L', isPence: false, isUsd: false },
+      MIDD: { yahoo: 'MIDD.L', isPence: true, isUsd: false },
+      VERX: { yahoo: 'VERX.L', isPence: false, isUsd: false },
+      SJPA: { yahoo: 'SJPA.L', isPence: true, isUsd: false },
+      SAUS: { yahoo: 'SAUS.L', isPence: true, isUsd: false },
+      EXCS: { yahoo: 'EXCS.L', isPence: false, isUsd: false },
+      IGLN: { yahoo: 'IGLN.L', isPence: false, isUsd: false },
+      LQQ3: { yahoo: 'LQQ3.L', isPence: true, isUsd: false },
+      CRUD: { yahoo: 'CRUD.L', isPence: false, isUsd: false }
     };
 
     // 計算兩個日期之間的交易日數 (扣除星期六、日)
@@ -376,25 +376,6 @@
       throw lastErr || new Error(`無法獲取 ${symbol} 報價`);
     }
 
-    // --- 透過 Twelve Data 官方直連 API (零 CORS 代理限制，支援 LSE) ---
-    // --- 透過 Twelve Data 官方直連 API (零 CORS 代理限制，使用免費版支援之美股標尺) ---
-    async function fetchTwelveDataSeries(tdSymbol, apiKey) {
-      const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(tdSymbol)}&interval=1day&outputsize=65&apikey=${encodeURIComponent(apiKey)}`;
-      const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) throw new Error(`TwelveData HTTP ${res.status}`);
-      const json = await res.json();
-      if (json.status === 'error') throw new Error(json.message || 'TwelveData API 錯誤');
-      const values = json?.values;
-      if (!Array.isArray(values) || values.length < 16) {
-        throw new Error(`${tdSymbol} 歷史日線不足`);
-      }
-      const closes = values
-        .map((row) => parseFloat(row.close))
-        .filter((v) => !isNaN(v))
-        .reverse();
-      return { closes };
-    }
-
     // --- 主 React 元件 ---
     function PortfolioDashboard() {
       const [holdings, setHoldings] = useState(() => {
@@ -432,13 +413,10 @@
       const [lastUpdated, setLastUpdated] = useState(new Date().toLocaleTimeString('zh-HK'));
       const [editingTicker, setEditingTicker] = useState(null);
       const [isFetchingApi, setIsFetchingApi] = useState(false);
-      const [twelveDataKey, setTwelveDataKey] = useState(() => {
-        return localStorage.getItem('IBUK_TWELVEDATA_KEY') || '';
-      });
-      const [showApiConfig, setShowApiConfig] = useState(false);
+      const [fallbackNotes, setFallbackNotes] = useState([]);
       const [apiStatus, setApiStatus] = useState({
         type: 'idle',
-        message: '已啟用 GitHub 全自動雲端同步引擎，打開網頁即自動讀取最新 IBUK 與倫敦 LSE 數據！',
+        message: '已啟用 GitHub 全自動雲端同步引擎，打開網頁即自動讀取最新 IBUK 與 Yahoo Finance 倫敦 LSE 數據！',
         gbpUsdRate: 1.318
       });
 
@@ -452,14 +430,19 @@
           .then(cloud => {
             if (!cloud || !cloud.marketData) return;
             const hasCloudPositions = cloud.ibkrPositions && Object.keys(cloud.ibkrPositions).length > 0;
+            const zeroCostTickers = [];
+
             setHoldings(prev => prev.map(h => {
               const m = cloud.marketData[h.ticker];
               const p = hasCloudPositions ? cloud.ibkrPositions[h.ticker] : null;
+              if (p && p.position > 0 && (!p.avgPrice || p.avgPrice <= 0)) {
+                zeroCostTickers.push(h.ticker);
+              }
               return {
                 ...h,
                 position: (p && p.position !== undefined) ? p.position : h.position,
-                avgPrice: (p && p.avgPrice) ? p.avgPrice : h.avgPrice,
-                costBasis: (p && p.costBasis) ? p.costBasis : h.costBasis,
+                avgPrice: (p && p.avgPrice > 0) ? p.avgPrice : h.avgPrice,
+                costBasis: (p && p.costBasis > 0) ? p.costBasis : h.costBasis,
                 price: (m && m.priceGbp) ? m.priceGbp : h.price,
                 rsi2: (m && m.rsi2 !== undefined) ? m.rsi2 : h.rsi2,
                 rsi14: (m && m.rsi14 !== undefined) ? m.rsi14 : h.rsi14,
@@ -473,9 +456,30 @@
             if (cloud.updatedAt) {
               setLastUpdated(cloud.updatedAt);
             }
+
+            // 整理防洗白 / 成本價沿用提示
+            const notices = [];
+            if (cloud.ibkrSyncStatus === 'CACHED_FALLBACK' || cloud.ibkrError) {
+              const oldPosTime = cloud.ibkrPositionsUpdatedAt || '上一次成功同步';
+              notices.push(
+                `IBKR 持倉／現金本次同步未成功（${cloud.ibkrError || '伺服器逾時'}），目前持倉沿用 ${oldPosTime} 之舊快照頂替。`
+              );
+            }
+            if (cloud.costBasisFallback && Array.isArray(cloud.costBasisFallback.tickers) && cloud.costBasisFallback.tickers.length > 0) {
+              const fromTime = cloud.costBasisFallback.fromUpdatedAt || cloud.costBasisUpdatedAt || '上一次有效快照';
+              notices.push(
+                `最新股數、現金與 LSE 股價已於 ${cloud.updatedAt} 更新；但 IBKR Flex 回傳成本價為 0，以下標的之平均成本暫沿用 ${fromTime} 舊數據頂替：${cloud.costBasisFallback.tickers.join(', ')}`
+              );
+            } else if (zeroCostTickers.length > 0) {
+              notices.push(
+                `最新數據已於 ${cloud.updatedAt} 更新，但 IBKR 回傳以下標的成本價為 0，已保留瀏覽器原有成本價：${zeroCostTickers.join(', ')}`
+              );
+            }
+            setFallbackNotes(notices);
+
             const ibkrNote = cloud.ibkrError
-              ? `LSE 股價與 RSI/MA 已更新 (${cloud.updatedAt})，但 IBKR 持倉暫用舊快照（${cloud.ibkrError}）`
-              : `已自動載入雲端最新快照 (${cloud.updatedAt}) • 含 IBUK 持倉與倫敦交易所真實 LSE 股價及 RSI/MA！`;
+              ? `Yahoo LSE 股價與 RSI/MA 已更新 (${cloud.updatedAt})，但 IBKR 持倉暫用舊快照`
+              : `已自動載入雲端最新快照 (${cloud.updatedAt}) • IBUK 持倉 + Yahoo Finance 倫敦 LSE 股價及 Wilder RSI/MA`;
             setApiStatus({
               type: 'success',
               message: ibkrNote,
@@ -486,10 +490,6 @@
             // 若在本地單獨開啟尚未連接 GitHub data.json，則靜默沿用本地儲存數據
           });
       }, []);
-
-      useEffect(() => {
-        localStorage.setItem('IBUK_TWELVEDATA_KEY', twelveDataKey);
-      }, [twelveDataKey]);
 
       useEffect(() => {
         localStorage.setItem('IBUK_QUANT_HOLDINGS_V2', JSON.stringify(holdings));
@@ -668,25 +668,20 @@
         setLastUpdated(new Date().toLocaleTimeString('zh-HK'));
       };
 
-      // 真實市場 API 抓數並重算全組合 RSI(2), RSI(14), MA4, MA30
+      // Yahoo Finance LSE (.L) 抓數並重算全組合 Wilder RSI(2), RSI(14), MA4, MA30
       const fetchLiveMarketData = async () => {
         if (isFetchingApi) return;
         setIsFetchingApi(true);
-        const useTwelveData = twelveDataKey.trim().length > 5;
         setApiStatus(prev => ({
           ...prev,
           type: 'loading',
-          message: useTwelveData
-            ? '正在透過 Twelve Data 官方直連 API 抓取對應指數日線並重算 Wilder RSI/MA...'
-            : '正在連接多節點代理抓取倫敦交易所 (LSE) 3 個月日線並重算 Wilder RSI/MA...'
+          message: '正在透過 Yahoo Finance 抓取倫敦交易所 (LSE .L) 3 個月日線並重算 Wilder RSI/MA...'
         }));
 
         try {
           let gbpUsd = apiStatus.gbpUsdRate || 1.318;
           try {
-            const fxChart = useTwelveData
-              ? await fetchTwelveDataSeries('GBP/USD', twelveDataKey.trim())
-              : await fetchYahooChartWithFallback('GBPUSD=X');
+            const fxChart = await fetchYahooChartWithFallback('GBPUSD=X');
             if (fxChart.closes.length > 0) {
               gbpUsd = fxChart.closes[fxChart.closes.length - 1];
             }
@@ -697,72 +692,26 @@
           const tickers = Object.keys(LSE_TICKER_META);
           const resultsMap = {};
           let successCount = 0;
-          let lastTdError = '';
 
-          if (useTwelveData) {
-            // 僅抓取有配置美股標尺的 8 隻風險資產 ETF (跳過 CSH2 與已清倉 CRUD，總共 8 次請求剛好壓在每分鐘 8 次免費上限內，零等待！)
-            const proxyTickers = tickers.filter(t => LSE_TICKER_META[t].tdProxy);
-            let creditsUsedThisMin = 1; // GBP/USD 已用 1 個額度
-
-            for (let i = 0; i < proxyTickers.length; i++) {
-              const ticker = proxyTickers[i];
-              const tdSymbol = LSE_TICKER_META[ticker].tdProxy;
-
-              if (creditsUsedThisMin >= 8) {
-                for (let sec = 62; sec > 0; sec--) {
-                  setApiStatus(prev => ({
-                    ...prev,
-                    type: 'loading',
-                    message: `已成功抓取 ${successCount}/${proxyTickers.length} 隻，自動等待 ${sec} 秒避開免費版每分鐘 8 次上限 (剩餘: ${proxyTickers.slice(i).join(', ')})...`
-                  }));
-                  await new Promise(r => setTimeout(r, 1000));
-                }
-                creditsUsedThisMin = 0;
-              }
-
-              setApiStatus(prev => ({
-                ...prev,
-                type: 'loading',
-                message: `正在直連 Twelve Data 抓取 ${ticker} [標尺: ${tdSymbol}] (${i + 1}/${proxyTickers.length})...`
-              }));
-
+          await Promise.all(
+            tickers.map(async (ticker) => {
+              const meta = LSE_TICKER_META[ticker];
               try {
-                const chart = await fetchTwelveDataSeries(tdSymbol, twelveDataKey.trim());
-                creditsUsedThisMin++;
+                const chart = await fetchYahooChartWithFallback(meta.yahoo);
                 const indicators = computeExcelIndicators(chart.closes);
                 if (indicators) {
-                  resultsMap[ticker] = { meta: LSE_TICKER_META[ticker], indicators, isProxy: true, proxySymbol: tdSymbol };
+                  resultsMap[ticker] = { meta, indicators };
                   successCount++;
                 }
               } catch (err) {
-                creditsUsedThisMin++;
-                lastTdError = err.message;
-                console.warn(`TwelveData ${ticker} (${tdSymbol}) 失敗:`, err);
+                console.warn(`${meta.yahoo} 抓數失敗:`, err);
               }
-            }
-          } else {
-            await Promise.all(
-              tickers.map(async (ticker) => {
-                const meta = LSE_TICKER_META[ticker];
-                try {
-                  const chart = await fetchYahooChartWithFallback(meta.yahoo);
-                  const indicators = computeExcelIndicators(chart.closes);
-                  if (indicators) {
-                    resultsMap[ticker] = { meta, indicators, isProxy: false };
-                    successCount++;
-                  }
-                } catch (err) {
-                  console.warn(`${meta.yahoo} 抓數失敗:`, err);
-                }
-              })
-            );
-          }
+            })
+          );
 
           if (successCount === 0) {
             throw new Error(
-              useTwelveData
-                ? `Twelve Data 回傳錯誤：${lastTdError || '請稍等 1 分鐘再試'}`
-                : '預覽沙盒或網絡封鎖了免費代理節點（建議下載 HTML 用本地瀏覽器打開，或按「API 設定」填入 Twelve Data 免費 Key）'
+              '瀏覽器代理節點暫時受限，建議依賴 GitHub Actions 自動同步之雲端 data.json（每交易日 17:30 / 21:30 UTC 自動更新）'
             );
           }
 
@@ -770,16 +719,7 @@
             const fetched = resultsMap[h.ticker];
             if (!fetched) return h;
 
-            const { meta, indicators, isProxy } = fetched;
-            // 若為 Twelve Data 美股標尺模式，僅更新無量綱 RSI(2)/RSI(14) 訊號，保留原本英鎊現價與 MA4/MA30 (£) 以免幣別錯位
-            if (isProxy) {
-              return {
-                ...h,
-                rsi2: indicators.rsi2,
-                rsi14: indicators.rsi14
-              };
-            }
-
+            const { meta, indicators } = fetched;
             let priceGbp = indicators.latestRawClose;
             let ma4Gbp = indicators.ma4;
             let ma30Gbp = indicators.ma30;
@@ -808,16 +748,14 @@
           setLastUpdated(nowStr);
           setApiStatus({
             type: 'success',
-            message: useTwelveData
-              ? `已透過 Twelve Data 官方直連同步 ${successCount}/8 隻追蹤指數之真實 RSI(2)/RSI(14)/MA 訊號！(GBP/USD: ${gbpUsd.toFixed(4)})`
-              : `已同步 ${successCount}/${tickers.length} 隻 LSE ETF 真實行情並重算 RSI/MA (GBP/USD: ${gbpUsd.toFixed(4)})`,
+            message: `已透過 Yahoo Finance 同步 ${successCount}/${tickers.length} 隻 LSE (.L) ETF 真實行情並重算 Wilder RSI/MA (GBP/USD: ${gbpUsd.toFixed(4)})`,
             gbpUsdRate: gbpUsd
           });
         } catch (err) {
           setApiStatus(prev => ({
             ...prev,
             type: 'error',
-            message: `API 連線受阻：${err.message}`
+            message: `Yahoo Finance 連線受阻：${err.message}`
           }));
         } finally {
           setIsFetchingApi(false);
@@ -968,18 +906,6 @@
                 更新: <span className="mono text-slate-200">{lastUpdated}</span>
               </div>
               <button
-                onClick={() => setShowApiConfig(prev => !prev)}
-                className={`px-3 py-2 rounded-lg text-xs font-medium transition flex items-center gap-1.5 border ${
-                  twelveDataKey.trim().length > 5
-                    ? 'bg-cyan-950/60 border-cyan-600/50 text-cyan-300 hover:bg-cyan-900/60'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-                }`}
-                title="設定 Twelve Data 免費 API Key（直連 LSE 零 CORS 限制）"
-              >
-                <i className="fas fa-key"></i>
-                {twelveDataKey.trim().length > 5 ? 'TwelveData 已綁定' : 'API 設定'}
-              </button>
-              <button
                 onClick={fetchLiveMarketData}
                 disabled={isFetchingApi}
                 className={`px-3.5 py-2 rounded-lg text-xs font-medium transition flex items-center gap-1.5 border ${
@@ -987,9 +913,10 @@
                     ? 'bg-slate-800 text-slate-400 border-slate-700 cursor-wait'
                     : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-950/60'
                 }`}
+                title="透過 Yahoo Finance 抓取倫敦交易所 (LSE .L) 日線並重算 Wilder RSI/MA"
               >
                 <i className={`fas fa-sync-alt ${isFetchingApi ? 'animate-spin' : ''}`}></i>
-                {isFetchingApi ? '抓取報價與計算 RSI...' : '抓真實市場行情'}
+                {isFetchingApi ? '抓取 Yahoo LSE 報價中...' : '抓 Yahoo LSE 行情'}
               </button>
               <button
                 onClick={exportJSON}
@@ -1000,45 +927,6 @@
               </button>
             </div>
           </header>
-
-          {/* 可摺疊 API 直連設定面板 */}
-          {showApiConfig && (
-            <div className="mt-4 bg-slate-900 border border-cyan-500/40 rounded-xl p-4 shadow-xl">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <div>
-                  <h3 className="text-sm font-bold text-cyan-300 flex items-center gap-2">
-                    <i className="fas fa-satellite-dish"></i> Twelve Data 免費官方直連設定 (解決公司防火牆與沙盒代理限制)
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-1">
-                    預覽視窗沙盒或部分公司網絡會封鎖免費 CORS 中轉站。前往 <a href="https://twelvedata.com/" target="_blank" rel="noreferrer" className="text-cyan-400 underline">twelvedata.com</a> 免費註冊取得 API Key 貼在下方，即可從瀏覽器直連倫敦交易所 (LSE)。
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <input
-                    type="text"
-                    value={twelveDataKey}
-                    onChange={(e) => setTwelveDataKey(e.target.value)}
-                    placeholder="貼上 Twelve Data API Key..."
-                    className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs mono text-white w-full sm:w-64 focus:border-cyan-500 focus:outline-none"
-                  />
-                  {twelveDataKey && (
-                    <button
-                      onClick={() => setTwelveDataKey('')}
-                      className="text-xs text-slate-400 hover:text-rose-400 px-2 py-1.5"
-                    >
-                      清除
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setShowApiConfig(false)}
-                    className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
-                  >
-                    完成
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* API 報價引擎即時狀態橫幅 */}
           {apiStatus.type !== 'idle' && (
@@ -1059,6 +947,18 @@
               <span className="text-[11px] opacity-80">
                 * 技術指標採用與 Excel Data_XXX 一致之 Wilder's 平滑演算法重算
               </span>
+            </div>
+          )}
+
+          {/* 舊數據頂替 / 防歸零保護提示橫幅 */}
+          {fallbackNotes.length > 0 && (
+            <div className="mt-3 px-4 py-2.5 rounded-xl border border-amber-500/40 bg-amber-950/40 text-amber-200 text-xs space-y-1">
+              {fallbackNotes.map((note, idx) => (
+                <div key={idx} className="flex items-start gap-2">
+                  <i className="fas fa-shield-alt text-amber-400 mt-0.5 shrink-0"></i>
+                  <span>{note}</span>
+                </div>
+              ))}
             </div>
           )}
 
