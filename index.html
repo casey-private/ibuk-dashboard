@@ -220,32 +220,32 @@
       }
     ];
 
-    // --- 預設 LQQ3 衛星倉戰術參數（11月23日最新狀態） ---
+    // --- 預設 LQQ3 衛星倉戰術參數（依 RULES.md v2.0） ---
     const INITIAL_LQQ3_PARAMS = {
       buyDate: "2026-11-17",
-      targetHoldDays: 45,
+      targetHoldDays: 15,
       takeProfitPct: 18.0,
-      hardStopLossPct: 24.0,
+      hardStopPriceGbp: 162.00, // 16,200 GBp 價格止損底線
       tranches: [
-        { id: 1, label: "第一注 (底倉)", shares: 6, buyPriceGbp: 219.00, status: "FILLED", note: "21,900p 已成交" },
-        { id: 2, label: "第二注 (加碼)", shares: 6, buyPriceGbp: 207.35, status: "FILLED", note: "20,700p 區間已成交 (均價降至 £213.18)" },
-        { id: 3, label: "第三注 (深洗)", shares: 9, buyPriceGbp: 189.00, status: "PENDING", note: "18,900p GTC 掛單待命 (預留 £1,701.00)" }
+        { id: 1, label: "第一注 (底倉)", shares: 6, buyPriceGbp: 219.00, status: "FILLED", note: "21,900 GBp (£1,314) 已成交" },
+        { id: 2, label: "第二注 (加碼)", shares: 6, buyPriceGbp: 207.35, status: "FILLED", note: "20,700 GBp 網格區間已成交 (目標 £1,242，均價 £213.18)" },
+        { id: 3, label: "第三注 (深洗)", shares: 9, buyPriceGbp: 189.00, status: "PENDING", note: "18,900 GBp GTC 掛單待命 (預留 £1,701.00，嚴禁動用 CSH2 補第4注)" }
       ]
     };
 
     // --- 倫敦交易所 ETF 代號與 Twelve Data 免費版美股標尺映射表 ---
-    // (Twelve Data 免費版不開放 :LSE，改用追蹤同指數之美股 ETF 計算精準 RSI/MA 趨勢，避免覆蓋英鎊現價)
+    // (IGLN.L 與 CRUD.L 於 LSE 直接以 GBP 報價，無需換算 USD；GBp 標的一律除以 100)
     const LSE_TICKER_META = {
-      CSH2: { yahoo: 'CSH2.L', tdProxy: null, isPence: true },
-      VNRT: { yahoo: 'VNRT.L', tdProxy: 'VOO', isPence: false },
-      MIDD: { yahoo: 'MIDD.L', tdProxy: 'EWU', isPence: true },
-      VERX: { yahoo: 'VERX.L', tdProxy: 'VGK', isPence: false },
-      SJPA: { yahoo: 'SJPA.L', tdProxy: 'EWJ', isPence: true },
-      SAUS: { yahoo: 'SAUS.L', tdProxy: 'EWA', isPence: true },
-      EXCS: { yahoo: 'EXCS.L', tdProxy: 'EMXC', isPence: false },
-      IGLN: { yahoo: 'IGLN.L', tdProxy: 'GLD', isPence: false, isUsd: true },
-      LQQ3: { yahoo: 'LQQ3.L', tdProxy: 'TQQQ', isPence: true },
-      CRUD: { yahoo: 'CRUD.L', tdProxy: null, isPence: false, isUsd: true }
+      CSH2: { yahoo: 'CSH2.L', tdProxy: null, isPence: true, isUsd: false },
+      VNRT: { yahoo: 'VNRT.L', tdProxy: 'VOO', isPence: false, isUsd: false },
+      MIDD: { yahoo: 'MIDD.L', tdProxy: 'EWU', isPence: true, isUsd: false },
+      VERX: { yahoo: 'VERX.L', tdProxy: 'VGK', isPence: false, isUsd: false },
+      SJPA: { yahoo: 'SJPA.L', tdProxy: 'EWJ', isPence: true, isUsd: false },
+      SAUS: { yahoo: 'SAUS.L', tdProxy: 'EWA', isPence: true, isUsd: false },
+      EXCS: { yahoo: 'EXCS.L', tdProxy: 'EMXC', isPence: false, isUsd: false },
+      IGLN: { yahoo: 'IGLN.L', tdProxy: 'GLD', isPence: false, isUsd: false },
+      LQQ3: { yahoo: 'LQQ3.L', tdProxy: 'TQQQ', isPence: true, isUsd: false },
+      CRUD: { yahoo: 'CRUD.L', tdProxy: null, isPence: false, isUsd: false }
     };
 
     // 計算兩個日期之間的交易日數 (扣除星期六、日)
@@ -409,7 +409,20 @@
 
       const [lqq3Config, setLqq3Config] = useState(() => {
         const saved = localStorage.getItem('IBUK_LQQ3_CONFIG_V2');
-        return saved ? JSON.parse(saved) : INITIAL_LQQ3_PARAMS;
+        if (!saved) return INITIAL_LQQ3_PARAMS;
+        try {
+          const parsed = JSON.parse(saved);
+          // 遷移舊版 v1 設定：補上 16,200 GBp (£162.00) 價格止損並將舊預設 45 日更新為 15 日
+          if (parsed.hardStopPriceGbp === undefined) {
+            parsed.hardStopPriceGbp = INITIAL_LQQ3_PARAMS.hardStopPriceGbp;
+            if (parsed.targetHoldDays === 45) {
+              parsed.targetHoldDays = INITIAL_LQQ3_PARAMS.targetHoldDays;
+            }
+          }
+          return { ...INITIAL_LQQ3_PARAMS, ...parsed };
+        } catch {
+          return INITIAL_LQQ3_PARAMS;
+        }
       });
 
       const [activeTab, setActiveTab] = useState('summary'); // 'summary' | 'lqq3' | 'import' | 'settings'
@@ -420,7 +433,7 @@
       const [editingTicker, setEditingTicker] = useState(null);
       const [isFetchingApi, setIsFetchingApi] = useState(false);
       const [twelveDataKey, setTwelveDataKey] = useState(() => {
-        return localStorage.getItem('IBUK_TWELVEDATA_KEY') || '28082edd02574ff185ef7f7a8416e6d1';
+        return localStorage.getItem('IBUK_TWELVEDATA_KEY') || '';
       });
       const [showApiConfig, setShowApiConfig] = useState(false);
       const [apiStatus, setApiStatus] = useState({
@@ -549,45 +562,70 @@
             const daysHeld = calcTradingDays(lqq3Config.buyDate);
             const vnrtItem = calculatedHoldings.find(h => h.ticker === 'VNRT');
             const isVnrtOverbought = vnrtItem && vnrtItem.rsi2 > 85;
+            const stopPriceGbp = lqq3Config.hardStopPriceGbp ?? 162.0;
+            const timeStopDays = lqq3Config.targetHoldDays || 15;
 
-            if (item.pnlPct >= lqq3Config.takeProfitPct || isVnrtOverbought) {
-              signal = { code: 'TAKE_PROFIT', label: '🎯 觸發止賺 ! (沽出半倉鎖利)', color: 'bg-emerald-600 text-white font-bold animate-pulse' };
-            } else if (daysHeld >= lqq3Config.targetHoldDays) {
-              signal = { code: 'TIME_STOP', label: `⚠️ 時間止損 (${daysHeld}/${lqq3Config.targetHoldDays}日)`, color: 'bg-amber-600 text-white font-bold' };
+            if (item.position <= 0) {
+              signal = { code: 'STANDBY', label: '⏳ 空倉待命 (GTC 網格掛單)', color: 'bg-slate-800 text-slate-300 border border-slate-700' };
+            } else if (item.price < stopPriceGbp) {
+              signal = {
+                code: 'PRICE_STOP',
+                label: `🚨 觸發價格止損 (<£${fmtNum(stopPriceGbp, 2)} / ${Math.round(stopPriceGbp * 100).toLocaleString()}p)`,
+                color: 'bg-rose-600 text-white font-bold animate-pulse'
+              };
+            } else if (item.pnlPct >= lqq3Config.takeProfitPct || isVnrtOverbought) {
+              const reason = isVnrtOverbought ? 'VNRT RSI>85' : `+${fmtNum(item.pnlPct, 1)}%`;
+              signal = {
+                code: 'TAKE_PROFIT',
+                label: `🎯 觸發止賺 (${reason}) 沽半倉→移平手→撥入CSH2`,
+                color: 'bg-emerald-600 text-white font-bold animate-pulse'
+              };
+            } else if (daysHeld >= timeStopDays) {
+              signal = {
+                code: 'TIME_STOP',
+                label: `⚠️ 時間止損 (${daysHeld}/${timeStopDays}交易日・建議減半倉)`,
+                color: 'bg-amber-600 text-white font-bold'
+              };
             } else {
-              signal = { code: 'HOLD_ATTACK', label: `🚀 戰術持倉中 (第 ${daysHeld} 交易日)`, color: 'bg-indigo-900/80 text-indigo-200 border border-indigo-500/50' };
+              signal = {
+                code: 'HOLD_ATTACK',
+                label: `🚀 戰術持倉中 (第 ${daysHeld}/${timeStopDays} 交易日)`,
+                color: 'bg-indigo-900/80 text-indigo-200 border border-indigo-500/50'
+              };
             }
           } else if (item.ticker === 'CRUD') {
             signal = { code: 'CLOSED', label: '❌ 已退場歸零', color: 'bg-slate-900 text-slate-500' };
+          } else if (item.ticker === 'CSH2') {
+            if (!isCsh2Safe) {
+              const estShares = Math.ceil((0.20 * trueCsh2Denominator - csh2Value) / item.price);
+              signal = {
+                code: 'DEFEND_CSH2',
+                label: `🚨 補充防線 +${estShares} 股`,
+                color: 'bg-rose-600 text-white font-bold animate-pulse'
+              };
+            }
           } else {
             const absDiff = Math.abs(difference);
             const isUnderweight = difference < 0;
             const isOverweight = difference > 0;
 
             if (isUnderweight) {
-              if (item.rsi2 < 15 && absDiff >= rebalanceThreshold && item.ticker !== 'CSH2') {
+              if (item.rsi2 < 15 && absDiff >= rebalanceThreshold) {
                 const estShares = Math.max(1, Math.round(absDiff / item.price));
                 signal = {
                   code: 'BUY',
                   label: `🟢 建議買入 ~${estShares} 股`,
                   color: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold'
                 };
-              } else if (item.rsi2 < 15 && absDiff < rebalanceThreshold && item.ticker !== 'CSH2') {
+              } else if (item.rsi2 < 15 && absDiff < rebalanceThreshold) {
                 signal = {
                   code: 'WATCH_BUY',
                   label: `👀 超賣觀察 (缺口<£${rebalanceThreshold})`,
                   color: 'bg-cyan-950/80 text-cyan-300 border border-cyan-700/50'
                 };
-              } else if (item.ticker === 'CSH2' && !isCsh2Safe) {
-                const estShares = Math.ceil((0.20 * trueCsh2Denominator - csh2Value) / item.price);
-                signal = {
-                  code: 'DEFEND_CSH2',
-                  label: `🚨 補充防線 +${estShares} 股`,
-                  color: 'bg-rose-600 text-white font-bold animate-pulse'
-                };
               }
             } else if (isOverweight) {
-              if (item.rsi2 > 85 && absDiff >= rebalanceThreshold && item.ticker !== 'CSH2') {
+              if (item.rsi2 > 85) {
                 const estShares = Math.max(1, Math.round(absDiff / item.price));
                 signal = {
                   code: 'TAKE_PROFIT',
@@ -733,23 +771,27 @@
             if (!fetched) return h;
 
             const { meta, indicators, isProxy } = fetched;
-            // 若為 Twelve Data 美股標尺模式，僅更新精準 RSI(2)/RSI(14)/MA4/MA30 量化訊號，保留原本英鎊持倉價以免幣別錯位
+            // 若為 Twelve Data 美股標尺模式，僅更新無量綱 RSI(2)/RSI(14) 訊號，保留原本英鎊現價與 MA4/MA30 (£) 以免幣別錯位
             if (isProxy) {
               return {
                 ...h,
                 rsi2: indicators.rsi2,
-                rsi14: indicators.rsi14,
-                ma4: indicators.ma4,
-                ma30: indicators.ma30
+                rsi14: indicators.rsi14
               };
             }
 
             let priceGbp = indicators.latestRawClose;
+            let ma4Gbp = indicators.ma4;
+            let ma30Gbp = indicators.ma30;
             if (meta.isPence) {
               priceGbp = priceGbp / 100;
+              ma4Gbp = ma4Gbp / 100;
+              ma30Gbp = ma30Gbp / 100;
             }
             if (meta.isUsd) {
               priceGbp = priceGbp / gbpUsd;
+              ma4Gbp = ma4Gbp / gbpUsd;
+              ma30Gbp = ma30Gbp / gbpUsd;
             }
 
             return {
@@ -757,8 +799,8 @@
               price: Number(priceGbp.toFixed(4)),
               rsi2: indicators.rsi2,
               rsi14: indicators.rsi14,
-              ma4: indicators.ma4,
-              ma30: indicators.ma30
+              ma4: Number(ma4Gbp.toFixed(2)),
+              ma30: Number(ma30Gbp.toFixed(2))
             };
           }));
 
@@ -1385,9 +1427,9 @@
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">時間止損上限 (Time-Stop 交易日)</label>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">時間止損上限 (Time-Stop 交易日・v2.0 預設 15 日)</label>
                   <div className="grid grid-cols-4 gap-2">
-                    {[15, 30, 45, 60].map(days => (
+                    {[15, 20, 30, 45].map(days => (
                       <button
                         key={days}
                         onClick={() => setLqq3Config({ ...lqq3Config, targetHoldDays: days })}
@@ -1402,7 +1444,8 @@
                     ))}
                   </div>
                   <p className="text-[11px] text-slate-500 mt-1.5">
-                    系統自動扣除星期六、日計算交易日。目前已持有 <span className="text-indigo-300 font-bold">{lqq3DaysHeld}</span> 個交易日。
+                    從第一注成交日起自動扣除星期六、日計算交易日。目前已持有 <span className={`font-bold ${lqq3DaysHeld >= (lqq3Config.targetHoldDays || 15) ? 'text-amber-400' : 'text-indigo-300'}`}>{lqq3DaysHeld}</span> / {lqq3Config.targetHoldDays || 15} 個交易日
+                    {lqq3DaysHeld >= (lqq3Config.targetHoldDays || 15) && <span className="text-amber-400 font-semibold">（⚠️ 達時間止損，建議減半倉避開 3x 損耗）</span>}。
                   </p>
                 </div>
 
@@ -1411,38 +1454,44 @@
                     <label className="block text-xs font-medium text-slate-400 mb-1">目標止賺幅度 (%)</label>
                     <input
                       type="number"
+                      step="0.5"
                       value={lqq3Config.takeProfitPct}
                       onChange={(e) => setLqq3Config({ ...lqq3Config, takeProfitPct: Number(e.target.value) })}
                       className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-emerald-400 font-bold mono"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">無條件硬止損 (%)</label>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">價格止損底線 (£)</label>
                     <input
                       type="number"
-                      value={lqq3Config.hardStopLossPct}
-                      onChange={(e) => setLqq3Config({ ...lqq3Config, hardStopLossPct: Number(e.target.value) })}
+                      step="1"
+                      value={lqq3Config.hardStopPriceGbp ?? 162}
+                      onChange={(e) => setLqq3Config({ ...lqq3Config, hardStopPriceGbp: Number(e.target.value) })}
                       className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-rose-400 font-bold mono"
                     />
                   </div>
                 </div>
 
                 <div className="bg-slate-950 rounded-xl p-4 border border-slate-800 space-y-2 text-xs">
-                  <div className="flex justify-between">
+                  <div className="flex justify-between gap-2">
                     <span className="text-slate-400">現有 LQQ3 持倉：</span>
-                    <span className="text-white font-bold mono">{lqq3Item ? lqq3Item.position : 0} 股 @ {lqq3Item ? fmtGBP(lqq3Item.avgPrice) : '£0'}</span>
+                    <span className="text-white font-bold mono whitespace-nowrap">{lqq3Item ? lqq3Item.position : 0} / 21 股 @ {lqq3Item ? fmtGBP(lqq3Item.avgPrice) : '£0'}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">首段止賺目標價 (+{lqq3Config.takeProfitPct}%)：</span>
-                    <span className="text-emerald-400 font-bold mono">
-                      {lqq3Item && lqq3Item.avgPrice > 0 ? fmtGBP(lqq3Item.avgPrice * (1 + lqq3Config.takeProfitPct / 100)) : '£0'}
+                  <div className="flex justify-between gap-2">
+                    <span className="text-slate-400">現價 / 止賺目標 (+{lqq3Config.takeProfitPct}%)：</span>
+                    <span className="text-emerald-400 font-bold mono whitespace-nowrap">
+                      {lqq3Item ? fmtGBP(lqq3Item.price) : '£0'} / {lqq3Item && lqq3Item.avgPrice > 0 ? fmtGBP(lqq3Item.avgPrice * (1 + lqq3Config.takeProfitPct / 100)) : '£0'}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">無條件止損底線 (-{lqq3Config.hardStopLossPct}%)：</span>
-                    <span className="text-rose-400 font-bold mono">
-                      {lqq3Item && lqq3Item.avgPrice > 0 ? fmtGBP(lqq3Item.avgPrice * (1 - lqq3Config.hardStopLossPct / 100)) : '£0'}
+                  <div className="flex justify-between gap-2">
+                    <span className="text-slate-400">價格止損底線：</span>
+                    <span className={`font-bold mono whitespace-nowrap ${lqq3Item && lqq3Item.price < (lqq3Config.hardStopPriceGbp ?? 162) ? 'text-rose-400 animate-pulse' : 'text-rose-400'}`}>
+                      {fmtGBP(lqq3Config.hardStopPriceGbp ?? 162)} ({Math.round((lqq3Config.hardStopPriceGbp ?? 162) * 100).toLocaleString()} GBp)
                     </span>
+                  </div>
+                  <div className="pt-2 border-t border-slate-800/80 text-[11px] text-slate-400 leading-relaxed">
+                    <div>• <span className="text-emerald-300">止賺</span>：回報 ≥ +{lqq3Config.takeProfitPct}% 或 VNRT 日線 RSI(2) &gt; 85 → 沽半倉、移止損至平手、利潤撥入 CSH2</div>
+                    <div>• <span className="text-rose-300">紀律</span>：上限 21 股，嚴禁動用 CSH2 20% 置業防線資金補第四注</div>
                   </div>
                 </div>
               </div>

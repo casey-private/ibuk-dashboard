@@ -7,7 +7,27 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
-# 1. 從 GitHub Secrets 讀取加密環境變數
+def _load_local_dotenv(path=".env"):
+    """本地測試時自動讀取 .env（不覆蓋已存在之系統/GitHub Actions 環境變數）"""
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k = k.strip()
+                v = v.strip().strip('"').strip("'")
+                if k and k not in os.environ:
+                    os.environ[k] = v
+    except Exception as e:
+        print(f"⚠️ 讀取本地 .env 失敗: {e}")
+
+_load_local_dotenv()
+
+# 1. 從環境變數 / GitHub Secrets 讀取加密設定
 IBKR_TOKEN = os.environ.get("IBKR_TOKEN", "").strip()
 IBKR_QUERY_ID = os.environ.get("IBKR_QUERY_ID", "").strip()
 
