@@ -1,126 +1,126 @@
 {
-  "updatedAt": "2026-11-24 22:34 UTC",
+  "updatedAt": "2026-11-25 18:06 UTC",
   "ibkrSyncStatus": "LIVE",
   "ibkrError": null,
-  "gbpUsdRate": 1.3115,
-  "freeCash": 3228.86,
+  "gbpUsdRate": 1.312,
+  "freeCash": 1986.86,
   "ibkrPositions": {
     "CSH2": {
       "position": 4717.0,
-      "avgPrice": 4.95,
-      "costBasis": 23349.13
+      "avgPrice": 0.0,
+      "costBasis": 0.0
     },
     "EXCS": {
       "position": 1780.0,
-      "avgPrice": 4.9565,
-      "costBasis": 8822.5
+      "avgPrice": 0.0,
+      "costBasis": 0.0
     },
     "LQQ3": {
       "position": 12.0,
-      "avgPrice": 213.1767,
-      "costBasis": 2558.12
+      "avgPrice": 0.0,
+      "costBasis": 0.0
     },
     "MIDD": {
       "position": 525.0,
-      "avgPrice": 20.3736,
-      "costBasis": 10696.14
+      "avgPrice": 0.0,
+      "costBasis": 0.0
     },
     "SAUS": {
       "position": 239.0,
-      "avgPrice": 43.898,
-      "costBasis": 10491.63
+      "avgPrice": 0.0,
+      "costBasis": 0.0
     },
     "SJPA": {
       "position": 191.0,
-      "avgPrice": 53.0813,
-      "costBasis": 10138.54
+      "avgPrice": 0.0,
+      "costBasis": 0.0
     },
     "VERX": {
       "position": 266.0,
-      "avgPrice": 40.4067,
-      "costBasis": 10748.17
+      "avgPrice": 0.0,
+      "costBasis": 0.0
     },
     "VNRT": {
       "position": 225.0,
-      "avgPrice": 126.6201,
-      "costBasis": 28489.52
+      "avgPrice": 0.0,
+      "costBasis": 0.0
     },
     "IGLN": {
       "position": 110.0,
-      "avgPrice": 66.1214,
-      "costBasis": 7273.35
+      "avgPrice": 0.0,
+      "costBasis": 0.0
     }
   },
   "marketData": {
     "CSH2": {
-      "priceGbp": 5.047,
-      "rsi2": 99.98,
-      "rsi14": 93.2,
+      "priceGbp": 5.049,
+      "rsi2": 100.0,
+      "rsi14": 94.2,
       "ma4": 5.05,
       "ma30": 5.04
     },
     "VNRT": {
-      "priceGbp": 133.16,
-      "rsi2": 37.08,
-      "rsi14": 39.37,
-      "ma4": 134.02,
-      "ma30": 138.62
+      "priceGbp": 130.535,
+      "rsi2": 19.88,
+      "rsi14": 35.0,
+      "ma4": 132.69,
+      "ma30": 138.19
     },
     "MIDD": {
-      "priceGbp": 22.085,
-      "rsi2": 36.2,
-      "rsi14": 39.7,
-      "ma4": 22.16,
-      "ma30": 22.61
+      "priceGbp": 21.87,
+      "rsi2": 19.81,
+      "rsi14": 36.19,
+      "ma4": 22.02,
+      "ma30": 22.59
     },
     "VERX": {
-      "priceGbp": 40.895,
-      "rsi2": 37.84,
-      "rsi14": 41.27,
-      "ma4": 40.99,
-      "ma30": 41.7
+      "priceGbp": 40.39,
+      "rsi2": 19.5,
+      "rsi14": 37.38,
+      "ma4": 40.75,
+      "ma30": 41.66
     },
     "SJPA": {
-      "priceGbp": 57.1,
-      "rsi2": 39.4,
-      "rsi14": 37.9,
-      "ma4": 57.34,
-      "ma30": 59.84
+      "priceGbp": 56.75,
+      "rsi2": 30.03,
+      "rsi14": 36.49,
+      "ma4": 56.99,
+      "ma30": 59.64
     },
     "SAUS": {
-      "priceGbp": 45.135,
-      "rsi2": 35.04,
-      "rsi14": 32.84,
-      "ma4": 45.17,
-      "ma30": 47.2
+      "priceGbp": 44.755,
+      "rsi2": 19.94,
+      "rsi14": 30.35,
+      "ma4": 45.06,
+      "ma30": 47.12
     },
     "EXCS": {
-      "priceGbp": 5.993,
-      "rsi2": 38.75,
-      "rsi14": 40.69,
-      "ma4": 6.06,
-      "ma30": 6.43
+      "priceGbp": 5.787,
+      "rsi2": 23.57,
+      "rsi14": 37.0,
+      "ma4": 5.97,
+      "ma30": 6.39
     },
     "IGLN": {
-      "priceGbp": 69.1775,
-      "rsi2": 29.2,
-      "rsi14": 30.68,
-      "ma4": 70.16,
-      "ma30": 76.84
+      "priceGbp": 66.9975,
+      "rsi2": 14.52,
+      "rsi14": 27.27,
+      "ma4": 69.04,
+      "ma30": 76.43
     },
     "LQQ3": {
-      "priceGbp": 199.29,
-      "rsi2": 29.61,
-      "rsi14": 33.46,
-      "ma4": 212.65,
-      "ma30": 269.04
+      "priceGbp": 178.24,
+      "rsi2": 15.32,
+      "rsi14": 29.86,
+      "ma4": 198.59,
+      "ma30": 263.81
     },
     "CRUD": {
-      "priceGbp": 15.825,
-      "rsi2": 23.04,
-      "rsi14": 33.76,
-      "ma4": 16.01,
-      "ma30": 17.75
+      "priceGbp": 16.203,
+      "rsi2": 76.49,
+      "rsi14": 39.79,
+      "ma4": 15.97,
+      "ma30": 17.69
     }
   }
 }
