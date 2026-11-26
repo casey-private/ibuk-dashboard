@@ -1,9 +1,9 @@
 {
-  "updatedAt": "2026-11-26 18:11 UTC",
+  "updatedAt": "2026-11-26 22:21 UTC",
   "ibkrSyncStatus": "LIVE",
   "ibkrError": null,
-  "ibkrPositionsUpdatedAt": "2026-11-26 18:11 UTC",
-  "costBasisUpdatedAt": "2026-11-26 18:11 UTC",
+  "ibkrPositionsUpdatedAt": "2026-11-26 22:21 UTC",
+  "costBasisUpdatedAt": "2026-11-26 22:21 UTC",
   "costBasisFallback": null,
   "gbpUsdRate": 1.3107,
   "freeCash": 1766.82,
