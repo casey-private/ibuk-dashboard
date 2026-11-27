@@ -1,8 +1,8 @@
 {
-  "updatedAt": "2026-11-27 18:11 UTC",
+  "updatedAt": "2026-11-27 22:19 UTC",
   "ibkrSyncStatus": "LIVE",
   "ibkrError": null,
-  "ibkrPositionsUpdatedAt": "2026-11-27 18:11 UTC",
+  "ibkrPositionsUpdatedAt": "2026-11-27 22:19 UTC",
   "costBasisUpdatedAt": "2026-11-26 22:21 UTC",
   "costBasisFallback": {
     "tickers": [
@@ -19,7 +19,7 @@
     "fromUpdatedAt": "2026-11-26 22:21 UTC",
     "reason": "IBKR Flex 回傳成本價為 0，已沿用上一次有效成本價頂替"
   },
-  "gbpUsdRate": 1.3097,
+  "gbpUsdRate": 1.3099,
   "freeCash": 65.82,
   "ibkrPositions": {
     "CSH2": {
