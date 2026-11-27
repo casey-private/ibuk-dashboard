@@ -1,12 +1,26 @@
 {
-  "updatedAt": "2026-11-26 22:21 UTC",
+  "updatedAt": "2026-11-27 18:11 UTC",
   "ibkrSyncStatus": "LIVE",
   "ibkrError": null,
-  "ibkrPositionsUpdatedAt": "2026-11-26 22:21 UTC",
+  "ibkrPositionsUpdatedAt": "2026-11-27 18:11 UTC",
   "costBasisUpdatedAt": "2026-11-26 22:21 UTC",
-  "costBasisFallback": null,
-  "gbpUsdRate": 1.3107,
-  "freeCash": 1766.82,
+  "costBasisFallback": {
+    "tickers": [
+      "CSH2",
+      "EXCS",
+      "LQQ3",
+      "MIDD",
+      "SAUS",
+      "SJPA",
+      "VERX",
+      "VNRT",
+      "IGLN"
+    ],
+    "fromUpdatedAt": "2026-11-26 22:21 UTC",
+    "reason": "IBKR Flex 回傳成本價為 0，已沿用上一次有效成本價頂替"
+  },
+  "gbpUsdRate": 1.3097,
+  "freeCash": 65.82,
   "ibkrPositions": {
     "CSH2": {
       "position": 4717.0,
@@ -56,74 +70,74 @@
   },
   "marketData": {
     "CSH2": {
-      "priceGbp": 5.05,
+      "priceGbp": 5.052,
       "rsi2": 100.0,
-      "rsi14": 94.63,
+      "rsi14": 95.35,
       "ma4": 5.05,
       "ma30": 5.04
     },
     "VNRT": {
-      "priceGbp": 134.555,
-      "rsi2": 66.9,
-      "rsi14": 45.02,
-      "ma4": 133.5,
-      "ma30": 137.94
+      "priceGbp": 135.405,
+      "rsi2": 73.48,
+      "rsi14": 46.85,
+      "ma4": 133.41,
+      "ma30": 137.75
     },
     "MIDD": {
-      "priceGbp": 22.295,
-      "rsi2": 71.26,
-      "rsi14": 46.05,
-      "ma4": 22.13,
+      "priceGbp": 22.49,
+      "rsi2": 81.91,
+      "rsi14": 49.85,
+      "ma4": 22.18,
       "ma30": 22.58
     },
     "VERX": {
-      "priceGbp": 41.105,
-      "rsi2": 66.07,
-      "rsi14": 45.12,
-      "ma4": 40.91,
-      "ma30": 41.65
+      "priceGbp": 41.435,
+      "rsi2": 77.88,
+      "rsi14": 48.34,
+      "ma4": 40.96,
+      "ma30": 41.64
     },
     "SJPA": {
-      "priceGbp": 57.67,
-      "rsi2": 68.91,
-      "rsi14": 42.39,
-      "ma4": 57.36,
-      "ma30": 59.5
+      "priceGbp": 58.71,
+      "rsi2": 80.91,
+      "rsi14": 47.85,
+      "ma4": 57.62,
+      "ma30": 59.54
     },
     "SAUS": {
-      "priceGbp": 45.655,
-      "rsi2": 73.68,
-      "rsi14": 41.17,
-      "ma4": 45.27,
-      "ma30": 47.07
+      "priceGbp": 46.16,
+      "rsi2": 84.99,
+      "rsi14": 46.23,
+      "ma4": 45.43,
+      "ma30": 47.04
     },
     "EXCS": {
-      "priceGbp": 6.06,
-      "rsi2": 62.5,
-      "rsi14": 44.11,
-      "ma4": 6.03,
-      "ma30": 6.37
+      "priceGbp": 6.177,
+      "rsi2": 73.89,
+      "rsi14": 46.86,
+      "ma4": 6.0,
+      "ma30": 6.35
     },
     "IGLN": {
-      "priceGbp": 69.2375,
-      "rsi2": 57.96,
-      "rsi14": 35.28,
-      "ma4": 69.16,
-      "ma30": 76.05
+      "priceGbp": 70.3175,
+      "rsi2": 71.79,
+      "rsi14": 38.77,
+      "ma4": 68.93,
+      "ma30": 75.69
     },
     "LQQ3": {
-      "priceGbp": 204.305,
-      "rsi2": 61.42,
-      "rsi14": 38.62,
-      "ma4": 200.62,
-      "ma30": 259.97
+      "priceGbp": 212.94,
+      "rsi2": 71.65,
+      "rsi14": 41.17,
+      "ma4": 198.69,
+      "ma30": 256.81
     },
     "CRUD": {
-      "priceGbp": 16.433,
-      "rsi2": 87.26,
-      "rsi14": 43.17,
-      "ma4": 16.06,
-      "ma30": 17.62
+      "priceGbp": 16.228,
+      "rsi2": 48.04,
+      "rsi14": 41.08,
+      "ma4": 16.17,
+      "ma30": 17.55
     }
   }
 }
